@@ -3,10 +3,11 @@ library(tidyverse)
 library(mgcv)
 library(parallel)
 library(pROC)
+library(pbapply)
 
 # ============================================================================
-# SCRIPT DE VALIDACIÓN: EVALUACIÓN ESTILO GIANGRECO
-# Objetivo: Detectar PRESENCIA de señal de interacción (no clasificar tipos)
+# SCRIPT DE VALIDACIÓN
+# Objetivo: Detectar PRESENCIA de señal de interacción
 # ============================================================================
 
 # ---------- PARÁMETROS DE CONFIGURACIÓN ----------
@@ -15,16 +16,13 @@ ruta_ground_truth <- "./ground_truth.csv"
 ruta_positive_meta <- "./positive_triplets_metadata.csv"
 ruta_negative_meta <- "./negative_triplets_metadata.csv"
 
-# Parámetros de detección de señal (estilo Giangreco)
-alpha_nominal <- 0.10        # IC 90% (como en Giangreco)
+# Parámetros de detección de señal 
+alpha_nominal <- 0.10        # IC 90%
 z90 <- qnorm(0.95)           # z-score para IC 90%
 
-# Criterios de señal significativa (adaptar según necesidad)
-# Opción 1: Al menos 1 etapa con IC90 que no incluya IOR=1
+# Criterios de señal significativa 
+# Al menos 1 etapa con IC90 que no incluya IOR=1
 min_stages_significant <- 1
-
-# Opción 2: Umbral de IOR mínimo (opcional, comentar si no se usa)
-# min_ior_threshold <- 1.5
 
 # Número de cores para paralelización
 n_cores <- max(1, detectCores() - 1)
@@ -237,23 +235,30 @@ analyze_triplet <- function(i, triplet_row, ade_data) {
 message("\nAnalizando ", nrow(ground_truth), " tripletes usando ", n_cores, " cores...")
 
 cl <- makeCluster(n_cores)
-clusterExport(cl, c("fit_differential_gam", "calculate_interaction_signal",
-                    "z90", "min_stages_significant", "niveles_nichd"))
+
+# IMPORTANTE: Exportar TODAS las funciones y objetos necesarios
+clusterExport(cl, c(
+  "fit_differential_gam",      # Función auxiliar
+  "calculate_interaction_signal", # Función auxiliar
+  "analyze_triplet",           # ← FALTABA ESTA
+  "z90",                       # Parámetro
+  "min_stages_significant",    # Parámetro
+  "niveles_nichd",            # Vector de niveles
+  "ade_aug",                  # Dataset
+  "ground_truth"              # ← También necesario
+))
+
 clusterEvalQ(cl, {
   library(data.table)
   library(mgcv)
 })
 
-pb <- txtProgressBar(max = nrow(ground_truth), style = 3)
-results_list <- vector("list", nrow(ground_truth))
-
-for (i in seq_len(nrow(ground_truth))) {
-  results_list[[i]] <- analyze_triplet(i, ground_truth[i], ade_aug)
-  setTxtProgressBar(pb, i)
-}
+# Usa pblapply para barra de progreso automática en paralelo
+results_list <- pblapply(seq_len(nrow(ground_truth)), function(i) {
+  analyze_triplet(i, ground_truth[i], ade_aug)
+}, cl = cl)
 
 stopCluster(cl)
-close(pb)
 
 # Convertir a data.table
 results_dt <- rbindlist(lapply(results_list, function(x) {
