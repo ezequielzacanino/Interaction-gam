@@ -1,0 +1,577 @@
+ATC_concept_class_id,ATC_concept_id,ATC_concept_name,Control,MedDRA_concept_class_id,MedDRA_concept_id,MedDRA_concept_name,ade,ade_name
+ATC 5th,21602320,isotretinoin,N,PT,36315573,Blood creatinine abnormal,21602320_36315573,isotretinoin and Blood creatinine abnormal
+ATC 5th,21602320,isotretinoin,N,PT,36315575,Blood creatinine increased,21602320_36315575,isotretinoin and Blood creatinine increased
+ATC 5th,21602320,isotretinoin,N,PT,36315595,Creatinine renal clearance decreased,21602320_36315595,isotretinoin and Creatinine renal clearance decreased
+ATC 5th,21602320,isotretinoin,N,PT,36315611,Inulin renal clearance decreased,21602320_36315611,isotretinoin and Inulin renal clearance decreased
+ATC 5th,21602320,isotretinoin,N,PT,37019353,Renal cortical necrosis,21602320_37019353,isotretinoin and Renal cortical necrosis
+ATC 5th,21602320,isotretinoin,N,PT,35506541,Renal papillary necrosis,21602320_35506541,isotretinoin and Renal papillary necrosis
+ATC 5th,21602320,isotretinoin,N,PT,36315599,Creatinine urine decreased,21602320_36315599,isotretinoin and Creatinine urine decreased
+ATC 5th,21602320,isotretinoin,N,PT,36315594,Creatinine renal clearance abnormal,21602320_36315594,isotretinoin and Creatinine renal clearance abnormal
+ATC 5th,21602320,isotretinoin,N,PT,36313522,Alanine aminotransferase abnormal,21602320_36313522,isotretinoin and Alanine aminotransferase abnormal
+ATC 5th,21602320,isotretinoin,N,PT,36313524,Alanine aminotransferase increased,21602320_36313524,isotretinoin and Alanine aminotransferase increased
+ATC 5th,21602320,isotretinoin,N,PT,35909522,Biliary cirrhosis,21602320_35909522,isotretinoin and Biliary cirrhosis
+ATC 5th,21602320,isotretinoin,N,PT,36313544,Bilirubin conjugated increased,21602320_36313544,isotretinoin and Bilirubin conjugated increased
+ATC 5th,21602320,isotretinoin,N,PT,35909527,Hepatic cirrhosis,21602320_35909527,isotretinoin and Hepatic cirrhosis
+ATC 5th,21602320,isotretinoin,N,PT,35909611,Hepatic necrosis,21602320_35909611,isotretinoin and Hepatic necrosis
+ATC 5th,21602320,isotretinoin,N,PT,35909471,Hepatitis cholestatic,21602320_35909471,isotretinoin and Hepatitis cholestatic
+ATC 5th,21602320,isotretinoin,N,PT,35909622,Hepatocellular damage neonatal,21602320_35909622,isotretinoin and Hepatocellular damage neonatal
+ATC 5th,21602320,isotretinoin,N,PT,35909624,Hepatocellular injury,21602320_35909624,isotretinoin and Hepatocellular injury
+ATC 5th,21602320,isotretinoin,N,PT,36312568,Blood alkaline phosphatase increased,21602320_36312568,isotretinoin and Blood alkaline phosphatase increased
+ATC 5th,21602320,isotretinoin,N,PT,36312566,Blood alkaline phosphatase abnormal,21602320_36312566,isotretinoin and Blood alkaline phosphatase abnormal
+ATC 5th,21602320,isotretinoin,N,PT,35909628,Mixed liver injury,21602320_35909628,isotretinoin and Mixed liver injury
+ATC 5th,21602320,isotretinoin,N,PT,35909503,Liver injury,21602320_35909503,isotretinoin and Liver injury
+ATC 5th,21602320,isotretinoin,N,PT,36313543,Bilirubin conjugated abnormal,21602320_36313543,isotretinoin and Bilirubin conjugated abnormal
+ATC 5th,21602320,isotretinoin,N,PT,35909606,Cholestatic liver injury,21602320_35909606,isotretinoin and Cholestatic liver injury
+ATC 5th,21602320,isotretinoin,N,PT,42889492,Acute yellow liver atrophy,21602320_42889492,isotretinoin and Acute yellow liver atrophy
+ATC 5th,21602320,isotretinoin,N,PT,42889495,Drug-induced liver injury,21602320_42889495,isotretinoin and Drug-induced liver injury
+ATC 5th,21602320,isotretinoin,N,PT,36009756,Anaphylactic reaction,21602320_36009756,isotretinoin and Anaphylactic reaction
+ATC 5th,21602320,isotretinoin,N,PT,36009707,Erythema multiforme,21602320_36009707,isotretinoin and Erythema multiforme
+ATC 5th,21602320,isotretinoin,N,PT,36045217,Fixed drug eruption,21602320_36045217,isotretinoin and Fixed drug eruption
+ATC 5th,21602320,isotretinoin,N,PT,35607134,Oculomucocutaneous syndrome,21602320_35607134,isotretinoin and Oculomucocutaneous syndrome
+ATC 5th,21602320,isotretinoin,N,PT,37320187,Rash papular,21602320_37320187,isotretinoin and Rash papular
+ATC 5th,21602320,isotretinoin,N,PT,36009724,Stevens-Johnson syndrome,21602320_36009724,isotretinoin and Stevens-Johnson syndrome
+ATC 5th,21602320,isotretinoin,N,PT,36009754,Toxic epidermal necrolysis,21602320_36009754,isotretinoin and Toxic epidermal necrolysis
+ATC 5th,21602320,isotretinoin,N,PT,36009755,Toxic skin eruption,21602320_36009755,isotretinoin and Toxic skin eruption
+ATC 5th,21602320,isotretinoin,N,PT,36313175,Platelet count abnormal,21602320_36313175,isotretinoin and Platelet count abnormal
+ATC 5th,21602320,isotretinoin,N,PT,36313176,Platelet count decreased,21602320_36313176,isotretinoin and Platelet count decreased
+ATC 5th,21602320,isotretinoin,N,PT,35104678,Platelet destruction increased,21602320_35104678,isotretinoin and Platelet destruction increased
+ATC 5th,21602320,isotretinoin,N,PT,35104679,Platelet disorder,21602320_35104679,isotretinoin and Platelet disorder
+ATC 5th,21602320,isotretinoin,N,PT,35104690,Platelet production decreased,21602320_35104690,isotretinoin and Platelet production decreased
+ATC 5th,21602320,isotretinoin,N,PT,35104182,Purpura neonatal,21602320_35104182,isotretinoin and Purpura neonatal
+ATC 5th,21602320,isotretinoin,N,PT,35104691,Thrombocytopenia,21602320_35104691,isotretinoin and Thrombocytopenia
+ATC 5th,21602320,isotretinoin,N,PT,35104692,Thrombocytopenia neonatal,21602320_35104692,isotretinoin and Thrombocytopenia neonatal
+ATC 5th,21602320,isotretinoin,N,PT,35104693,Thrombocytopenic purpura,21602320_35104693,isotretinoin and Thrombocytopenic purpura
+ATC 5th,21602320,isotretinoin,N,PT,35104688,Heparin-induced thrombocytopenia,21602320_35104688,isotretinoin and Heparin-induced thrombocytopenia
+ATC 5th,21602320,isotretinoin,N,PT,42889748,Heparin-induced thrombocytopenia test positive,21602320_42889748,isotretinoin and Heparin-induced thrombocytopenia test positive
+ATC 5th,21602320,isotretinoin,N,PT,42888927,Non-immune heparin associated thrombocytopenia,21602320_42888927,isotretinoin and Non-immune heparin associated thrombocytopenia
+ATC 5th,21602800,doxycycline,N,PT,36315573,Blood creatinine abnormal,21602800_36315573,doxycycline and Blood creatinine abnormal
+ATC 5th,21602800,doxycycline,N,PT,36315575,Blood creatinine increased,21602800_36315575,doxycycline and Blood creatinine increased
+ATC 5th,21602800,doxycycline,N,PT,36315595,Creatinine renal clearance decreased,21602800_36315595,doxycycline and Creatinine renal clearance decreased
+ATC 5th,21602800,doxycycline,N,PT,36315611,Inulin renal clearance decreased,21602800_36315611,doxycycline and Inulin renal clearance decreased
+ATC 5th,21602800,doxycycline,N,PT,37019353,Renal cortical necrosis,21602800_37019353,doxycycline and Renal cortical necrosis
+ATC 5th,21602800,doxycycline,N,PT,35506541,Renal papillary necrosis,21602800_35506541,doxycycline and Renal papillary necrosis
+ATC 5th,21602800,doxycycline,N,PT,36315599,Creatinine urine decreased,21602800_36315599,doxycycline and Creatinine urine decreased
+ATC 5th,21602800,doxycycline,N,PT,36315594,Creatinine renal clearance abnormal,21602800_36315594,doxycycline and Creatinine renal clearance abnormal
+ATC 5th,21602800,doxycycline,N,PT,36313522,Alanine aminotransferase abnormal,21602800_36313522,doxycycline and Alanine aminotransferase abnormal
+ATC 5th,21602800,doxycycline,N,PT,36313524,Alanine aminotransferase increased,21602800_36313524,doxycycline and Alanine aminotransferase increased
+ATC 5th,21602800,doxycycline,N,PT,35909522,Biliary cirrhosis,21602800_35909522,doxycycline and Biliary cirrhosis
+ATC 5th,21602800,doxycycline,N,PT,36313544,Bilirubin conjugated increased,21602800_36313544,doxycycline and Bilirubin conjugated increased
+ATC 5th,21602800,doxycycline,N,PT,35909527,Hepatic cirrhosis,21602800_35909527,doxycycline and Hepatic cirrhosis
+ATC 5th,21602800,doxycycline,N,PT,35909611,Hepatic necrosis,21602800_35909611,doxycycline and Hepatic necrosis
+ATC 5th,21602800,doxycycline,N,PT,35909471,Hepatitis cholestatic,21602800_35909471,doxycycline and Hepatitis cholestatic
+ATC 5th,21602800,doxycycline,N,PT,35909622,Hepatocellular damage neonatal,21602800_35909622,doxycycline and Hepatocellular damage neonatal
+ATC 5th,21602800,doxycycline,N,PT,35909624,Hepatocellular injury,21602800_35909624,doxycycline and Hepatocellular injury
+ATC 5th,21602800,doxycycline,N,PT,36312568,Blood alkaline phosphatase increased,21602800_36312568,doxycycline and Blood alkaline phosphatase increased
+ATC 5th,21602800,doxycycline,N,PT,36312566,Blood alkaline phosphatase abnormal,21602800_36312566,doxycycline and Blood alkaline phosphatase abnormal
+ATC 5th,21602800,doxycycline,N,PT,35909628,Mixed liver injury,21602800_35909628,doxycycline and Mixed liver injury
+ATC 5th,21602800,doxycycline,N,PT,35909503,Liver injury,21602800_35909503,doxycycline and Liver injury
+ATC 5th,21602800,doxycycline,N,PT,36313543,Bilirubin conjugated abnormal,21602800_36313543,doxycycline and Bilirubin conjugated abnormal
+ATC 5th,21602800,doxycycline,N,PT,35909606,Cholestatic liver injury,21602800_35909606,doxycycline and Cholestatic liver injury
+ATC 5th,21602800,doxycycline,N,PT,42889492,Acute yellow liver atrophy,21602800_42889492,doxycycline and Acute yellow liver atrophy
+ATC 5th,21602800,doxycycline,N,PT,42889495,Drug-induced liver injury,21602800_42889495,doxycycline and Drug-induced liver injury
+ATC 5th,21602800,doxycycline,N,PT,36009756,Anaphylactic reaction,21602800_36009756,doxycycline and Anaphylactic reaction
+ATC 5th,21602800,doxycycline,N,PT,36919145,Acute psychosis,21602800_36919145,doxycycline and Acute psychosis
+ATC 5th,21602800,doxycycline,N,PT,36919053,Affective disorder,21602800_36919053,doxycycline and Affective disorder
+ATC 5th,21602800,doxycycline,N,PT,36918968,Delusion,21602800_36918968,doxycycline and Delusion
+ATC 5th,21602800,doxycycline,N,PT,36918969,Delusion of grandeur,21602800_36918969,doxycycline and Delusion of grandeur
+ATC 5th,21602800,doxycycline,N,PT,36918970,Delusion of reference,21602800_36918970,doxycycline and Delusion of reference
+ATC 5th,21602800,doxycycline,N,PT,36918971,Delusion of replacement,21602800_36918971,doxycycline and Delusion of replacement
+ATC 5th,21602800,doxycycline,N,PT,36918974,Erotomanic delusion,21602800_36918974,doxycycline and Erotomanic delusion
+ATC 5th,21602800,doxycycline,N,PT,36919067,Grandiosity,21602800_36919067,doxycycline and Grandiosity
+ATC 5th,21602800,doxycycline,N,PT,36918975,Jealous delusion,21602800_36918975,doxycycline and Jealous delusion
+ATC 5th,21602800,doxycycline,N,PT,36919075,Paranoia,21602800_36919075,doxycycline and Paranoia
+ATC 5th,21602800,doxycycline,N,PT,36918976,Persecutory delusion,21602800_36918976,doxycycline and Persecutory delusion
+ATC 5th,21602800,doxycycline,N,PT,36919154,Schizoaffective disorder,21602800_36919154,doxycycline and Schizoaffective disorder
+ATC 5th,21602800,doxycycline,N,PT,36919152,Senile psychosis,21602800_36919152,doxycycline and Senile psychosis
+ATC 5th,21602800,doxycycline,N,PT,36919153,Shared psychotic disorder,21602800_36919153,doxycycline and Shared psychotic disorder
+ATC 5th,21602800,doxycycline,N,PT,36918977,Somatic delusion,21602800_36918977,doxycycline and Somatic delusion
+ATC 5th,21602800,doxycycline,N,PT,36919151,Reactive psychosis,21602800_36919151,doxycycline and Reactive psychosis
+ATC 5th,21602800,doxycycline,N,PT,36919136,Transient psychosis,21602800_36919136,doxycycline and Transient psychosis
+ATC 5th,21602800,doxycycline,N,PT,36919033,Bipolar disorder,21602800_36919033,doxycycline and Bipolar disorder
+ATC 5th,21602800,doxycycline,N,PT,36718514,Epileptic psychosis,21602800_36718514,doxycycline and Epileptic psychosis
+ATC 5th,21602800,doxycycline,N,PT,36919146,Childhood psychosis,21602800_36919146,doxycycline and Childhood psychosis
+ATC 5th,21602800,doxycycline,N,PT,36919149,Psychotic disorder,21602800_36919149,doxycycline and Psychotic disorder
+ATC 5th,21602800,doxycycline,N,PT,36919147,Hysterical psychosis,21602800_36919147,doxycycline and Hysterical psychosis
+ATC 5th,21602800,doxycycline,N,PT,36918973,Depressive delusion,21602800_36918973,doxycycline and Depressive delusion
+ATC 5th,21602800,doxycycline,N,PT,36211642,Psychosis postoperative,21602800_36211642,doxycycline and Psychosis postoperative
+ATC 5th,21602800,doxycycline,N,PT,42890510,Postictal psychosis,21602800_42890510,doxycycline and Postictal psychosis
+ATC 5th,21602800,doxycycline,N,PT,36919230,Completed suicide,21602800_36919230,doxycycline and Completed suicide
+ATC 5th,21602800,doxycycline,N,PT,36919236,Suicide attempt,21602800_36919236,doxycycline and Suicide attempt
+ATC 5th,21602800,doxycycline,N,PT,36313175,Platelet count abnormal,21602800_36313175,doxycycline and Platelet count abnormal
+ATC 5th,21602800,doxycycline,N,PT,36313176,Platelet count decreased,21602800_36313176,doxycycline and Platelet count decreased
+ATC 5th,21602800,doxycycline,N,PT,35104678,Platelet destruction increased,21602800_35104678,doxycycline and Platelet destruction increased
+ATC 5th,21602800,doxycycline,N,PT,35104679,Platelet disorder,21602800_35104679,doxycycline and Platelet disorder
+ATC 5th,21602800,doxycycline,N,PT,35104690,Platelet production decreased,21602800_35104690,doxycycline and Platelet production decreased
+ATC 5th,21602800,doxycycline,N,PT,35104182,Purpura neonatal,21602800_35104182,doxycycline and Purpura neonatal
+ATC 5th,21602800,doxycycline,N,PT,35104691,Thrombocytopenia,21602800_35104691,doxycycline and Thrombocytopenia
+ATC 5th,21602800,doxycycline,N,PT,35104692,Thrombocytopenia neonatal,21602800_35104692,doxycycline and Thrombocytopenia neonatal
+ATC 5th,21602800,doxycycline,N,PT,35104693,Thrombocytopenic purpura,21602800_35104693,doxycycline and Thrombocytopenic purpura
+ATC 5th,21602800,doxycycline,N,PT,35104688,Heparin-induced thrombocytopenia,21602800_35104688,doxycycline and Heparin-induced thrombocytopenia
+ATC 5th,21602800,doxycycline,N,PT,42889748,Heparin-induced thrombocytopenia test positive,21602800_42889748,doxycycline and Heparin-induced thrombocytopenia test positive
+ATC 5th,21602800,doxycycline,N,PT,42888927,Non-immune heparin associated thrombocytopenia,21602800_42888927,doxycycline and Non-immune heparin associated thrombocytopenia
+ATC 5th,21602977,clarithromycin,N,PT,36315573,Blood creatinine abnormal,21602977_36315573,clarithromycin and Blood creatinine abnormal
+ATC 5th,21602977,clarithromycin,N,PT,36315575,Blood creatinine increased,21602977_36315575,clarithromycin and Blood creatinine increased
+ATC 5th,21602977,clarithromycin,N,PT,36315595,Creatinine renal clearance decreased,21602977_36315595,clarithromycin and Creatinine renal clearance decreased
+ATC 5th,21602977,clarithromycin,N,PT,36315611,Inulin renal clearance decreased,21602977_36315611,clarithromycin and Inulin renal clearance decreased
+ATC 5th,21602977,clarithromycin,N,PT,37019353,Renal cortical necrosis,21602977_37019353,clarithromycin and Renal cortical necrosis
+ATC 5th,21602977,clarithromycin,N,PT,35506541,Renal papillary necrosis,21602977_35506541,clarithromycin and Renal papillary necrosis
+ATC 5th,21602977,clarithromycin,N,PT,36315599,Creatinine urine decreased,21602977_36315599,clarithromycin and Creatinine urine decreased
+ATC 5th,21602977,clarithromycin,N,PT,36315594,Creatinine renal clearance abnormal,21602977_36315594,clarithromycin and Creatinine renal clearance abnormal
+ATC 5th,21602977,clarithromycin,N,PT,36009756,Anaphylactic reaction,21602977_36009756,clarithromycin and Anaphylactic reaction
+ATC 5th,21602977,clarithromycin,N,PT,36919145,Acute psychosis,21602977_36919145,clarithromycin and Acute psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36919053,Affective disorder,21602977_36919053,clarithromycin and Affective disorder
+ATC 5th,21602977,clarithromycin,N,PT,36918968,Delusion,21602977_36918968,clarithromycin and Delusion
+ATC 5th,21602977,clarithromycin,N,PT,36918969,Delusion of grandeur,21602977_36918969,clarithromycin and Delusion of grandeur
+ATC 5th,21602977,clarithromycin,N,PT,36918970,Delusion of reference,21602977_36918970,clarithromycin and Delusion of reference
+ATC 5th,21602977,clarithromycin,N,PT,36918971,Delusion of replacement,21602977_36918971,clarithromycin and Delusion of replacement
+ATC 5th,21602977,clarithromycin,N,PT,36918974,Erotomanic delusion,21602977_36918974,clarithromycin and Erotomanic delusion
+ATC 5th,21602977,clarithromycin,N,PT,36919067,Grandiosity,21602977_36919067,clarithromycin and Grandiosity
+ATC 5th,21602977,clarithromycin,N,PT,36918975,Jealous delusion,21602977_36918975,clarithromycin and Jealous delusion
+ATC 5th,21602977,clarithromycin,N,PT,36919075,Paranoia,21602977_36919075,clarithromycin and Paranoia
+ATC 5th,21602977,clarithromycin,N,PT,36918976,Persecutory delusion,21602977_36918976,clarithromycin and Persecutory delusion
+ATC 5th,21602977,clarithromycin,N,PT,36919154,Schizoaffective disorder,21602977_36919154,clarithromycin and Schizoaffective disorder
+ATC 5th,21602977,clarithromycin,N,PT,36919152,Senile psychosis,21602977_36919152,clarithromycin and Senile psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36919153,Shared psychotic disorder,21602977_36919153,clarithromycin and Shared psychotic disorder
+ATC 5th,21602977,clarithromycin,N,PT,36918977,Somatic delusion,21602977_36918977,clarithromycin and Somatic delusion
+ATC 5th,21602977,clarithromycin,N,PT,36919151,Reactive psychosis,21602977_36919151,clarithromycin and Reactive psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36919136,Transient psychosis,21602977_36919136,clarithromycin and Transient psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36919033,Bipolar disorder,21602977_36919033,clarithromycin and Bipolar disorder
+ATC 5th,21602977,clarithromycin,N,PT,36718514,Epileptic psychosis,21602977_36718514,clarithromycin and Epileptic psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36919146,Childhood psychosis,21602977_36919146,clarithromycin and Childhood psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36919149,Psychotic disorder,21602977_36919149,clarithromycin and Psychotic disorder
+ATC 5th,21602977,clarithromycin,N,PT,36919147,Hysterical psychosis,21602977_36919147,clarithromycin and Hysterical psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36918973,Depressive delusion,21602977_36918973,clarithromycin and Depressive delusion
+ATC 5th,21602977,clarithromycin,N,PT,36211642,Psychosis postoperative,21602977_36211642,clarithromycin and Psychosis postoperative
+ATC 5th,21602977,clarithromycin,N,PT,42890510,Postictal psychosis,21602977_42890510,clarithromycin and Postictal psychosis
+ATC 5th,21602977,clarithromycin,N,PT,36919230,Completed suicide,21602977_36919230,clarithromycin and Completed suicide
+ATC 5th,21602977,clarithromycin,N,PT,36919236,Suicide attempt,21602977_36919236,clarithromycin and Suicide attempt
+ATC 5th,21603103,isoniazid,N,PT,36315573,Blood creatinine abnormal,21603103_36315573,isoniazid and Blood creatinine abnormal
+ATC 5th,21603103,isoniazid,N,PT,36315575,Blood creatinine increased,21603103_36315575,isoniazid and Blood creatinine increased
+ATC 5th,21603103,isoniazid,N,PT,36315595,Creatinine renal clearance decreased,21603103_36315595,isoniazid and Creatinine renal clearance decreased
+ATC 5th,21603103,isoniazid,N,PT,36315611,Inulin renal clearance decreased,21603103_36315611,isoniazid and Inulin renal clearance decreased
+ATC 5th,21603103,isoniazid,N,PT,37019353,Renal cortical necrosis,21603103_37019353,isoniazid and Renal cortical necrosis
+ATC 5th,21603103,isoniazid,N,PT,35506541,Renal papillary necrosis,21603103_35506541,isoniazid and Renal papillary necrosis
+ATC 5th,21603103,isoniazid,N,PT,36315599,Creatinine urine decreased,21603103_36315599,isoniazid and Creatinine urine decreased
+ATC 5th,21603103,isoniazid,N,PT,36315594,Creatinine renal clearance abnormal,21603103_36315594,isoniazid and Creatinine renal clearance abnormal
+ATC 5th,21603103,isoniazid,N,PT,36009756,Anaphylactic reaction,21603103_36009756,isoniazid and Anaphylactic reaction
+ATC 5th,21603103,isoniazid,N,PT,36919145,Acute psychosis,21603103_36919145,isoniazid and Acute psychosis
+ATC 5th,21603103,isoniazid,N,PT,36919053,Affective disorder,21603103_36919053,isoniazid and Affective disorder
+ATC 5th,21603103,isoniazid,N,PT,36918968,Delusion,21603103_36918968,isoniazid and Delusion
+ATC 5th,21603103,isoniazid,N,PT,36918969,Delusion of grandeur,21603103_36918969,isoniazid and Delusion of grandeur
+ATC 5th,21603103,isoniazid,N,PT,36918970,Delusion of reference,21603103_36918970,isoniazid and Delusion of reference
+ATC 5th,21603103,isoniazid,N,PT,36918971,Delusion of replacement,21603103_36918971,isoniazid and Delusion of replacement
+ATC 5th,21603103,isoniazid,N,PT,36918974,Erotomanic delusion,21603103_36918974,isoniazid and Erotomanic delusion
+ATC 5th,21603103,isoniazid,N,PT,36919067,Grandiosity,21603103_36919067,isoniazid and Grandiosity
+ATC 5th,21603103,isoniazid,N,PT,36918975,Jealous delusion,21603103_36918975,isoniazid and Jealous delusion
+ATC 5th,21603103,isoniazid,N,PT,36919075,Paranoia,21603103_36919075,isoniazid and Paranoia
+ATC 5th,21603103,isoniazid,N,PT,36918976,Persecutory delusion,21603103_36918976,isoniazid and Persecutory delusion
+ATC 5th,21603103,isoniazid,N,PT,36919154,Schizoaffective disorder,21603103_36919154,isoniazid and Schizoaffective disorder
+ATC 5th,21603103,isoniazid,N,PT,36919152,Senile psychosis,21603103_36919152,isoniazid and Senile psychosis
+ATC 5th,21603103,isoniazid,N,PT,36919153,Shared psychotic disorder,21603103_36919153,isoniazid and Shared psychotic disorder
+ATC 5th,21603103,isoniazid,N,PT,36918977,Somatic delusion,21603103_36918977,isoniazid and Somatic delusion
+ATC 5th,21603103,isoniazid,N,PT,36919151,Reactive psychosis,21603103_36919151,isoniazid and Reactive psychosis
+ATC 5th,21603103,isoniazid,N,PT,36919136,Transient psychosis,21603103_36919136,isoniazid and Transient psychosis
+ATC 5th,21603103,isoniazid,N,PT,36919033,Bipolar disorder,21603103_36919033,isoniazid and Bipolar disorder
+ATC 5th,21603103,isoniazid,N,PT,36718514,Epileptic psychosis,21603103_36718514,isoniazid and Epileptic psychosis
+ATC 5th,21603103,isoniazid,N,PT,36919146,Childhood psychosis,21603103_36919146,isoniazid and Childhood psychosis
+ATC 5th,21603103,isoniazid,N,PT,36919149,Psychotic disorder,21603103_36919149,isoniazid and Psychotic disorder
+ATC 5th,21603103,isoniazid,N,PT,36919147,Hysterical psychosis,21603103_36919147,isoniazid and Hysterical psychosis
+ATC 5th,21603103,isoniazid,N,PT,36918973,Depressive delusion,21603103_36918973,isoniazid and Depressive delusion
+ATC 5th,21603103,isoniazid,N,PT,36211642,Psychosis postoperative,21603103_36211642,isoniazid and Psychosis postoperative
+ATC 5th,21603103,isoniazid,N,PT,42890510,Postictal psychosis,21603103_42890510,isoniazid and Postictal psychosis
+ATC 5th,21603103,isoniazid,N,PT,36919230,Completed suicide,21603103_36919230,isoniazid and Completed suicide
+ATC 5th,21603103,isoniazid,N,PT,36919236,Suicide attempt,21603103_36919236,isoniazid and Suicide attempt
+ATC 5th,21603103,isoniazid,N,PT,36313175,Platelet count abnormal,21603103_36313175,isoniazid and Platelet count abnormal
+ATC 5th,21603103,isoniazid,N,PT,36313176,Platelet count decreased,21603103_36313176,isoniazid and Platelet count decreased
+ATC 5th,21603103,isoniazid,N,PT,35104678,Platelet destruction increased,21603103_35104678,isoniazid and Platelet destruction increased
+ATC 5th,21603103,isoniazid,N,PT,35104679,Platelet disorder,21603103_35104679,isoniazid and Platelet disorder
+ATC 5th,21603103,isoniazid,N,PT,35104690,Platelet production decreased,21603103_35104690,isoniazid and Platelet production decreased
+ATC 5th,21603103,isoniazid,N,PT,35104182,Purpura neonatal,21603103_35104182,isoniazid and Purpura neonatal
+ATC 5th,21603103,isoniazid,N,PT,35104691,Thrombocytopenia,21603103_35104691,isoniazid and Thrombocytopenia
+ATC 5th,21603103,isoniazid,N,PT,35104692,Thrombocytopenia neonatal,21603103_35104692,isoniazid and Thrombocytopenia neonatal
+ATC 5th,21603103,isoniazid,N,PT,35104693,Thrombocytopenic purpura,21603103_35104693,isoniazid and Thrombocytopenic purpura
+ATC 5th,21603103,isoniazid,N,PT,35104688,Heparin-induced thrombocytopenia,21603103_35104688,isoniazid and Heparin-induced thrombocytopenia
+ATC 5th,21603103,isoniazid,N,PT,42889748,Heparin-induced thrombocytopenia test positive,21603103_42889748,isoniazid and Heparin-induced thrombocytopenia test positive
+ATC 5th,21603103,isoniazid,N,PT,42888927,Non-immune heparin associated thrombocytopenia,21603103_42888927,isoniazid and Non-immune heparin associated thrombocytopenia
+ATC 5th,21603356,montelukast,N,PT,36315573,Blood creatinine abnormal,21603356_36315573,montelukast and Blood creatinine abnormal
+ATC 5th,21603356,montelukast,N,PT,36315575,Blood creatinine increased,21603356_36315575,montelukast and Blood creatinine increased
+ATC 5th,21603356,montelukast,N,PT,36315595,Creatinine renal clearance decreased,21603356_36315595,montelukast and Creatinine renal clearance decreased
+ATC 5th,21603356,montelukast,N,PT,36315611,Inulin renal clearance decreased,21603356_36315611,montelukast and Inulin renal clearance decreased
+ATC 5th,21603356,montelukast,N,PT,37019353,Renal cortical necrosis,21603356_37019353,montelukast and Renal cortical necrosis
+ATC 5th,21603356,montelukast,N,PT,35506541,Renal papillary necrosis,21603356_35506541,montelukast and Renal papillary necrosis
+ATC 5th,21603356,montelukast,N,PT,36315599,Creatinine urine decreased,21603356_36315599,montelukast and Creatinine urine decreased
+ATC 5th,21603356,montelukast,N,PT,36315594,Creatinine renal clearance abnormal,21603356_36315594,montelukast and Creatinine renal clearance abnormal
+ATC 5th,21603356,montelukast,N,PT,36313522,Alanine aminotransferase abnormal,21603356_36313522,montelukast and Alanine aminotransferase abnormal
+ATC 5th,21603356,montelukast,N,PT,36313524,Alanine aminotransferase increased,21603356_36313524,montelukast and Alanine aminotransferase increased
+ATC 5th,21603356,montelukast,N,PT,35909522,Biliary cirrhosis,21603356_35909522,montelukast and Biliary cirrhosis
+ATC 5th,21603356,montelukast,N,PT,36313544,Bilirubin conjugated increased,21603356_36313544,montelukast and Bilirubin conjugated increased
+ATC 5th,21603356,montelukast,N,PT,35909527,Hepatic cirrhosis,21603356_35909527,montelukast and Hepatic cirrhosis
+ATC 5th,21603356,montelukast,N,PT,35909611,Hepatic necrosis,21603356_35909611,montelukast and Hepatic necrosis
+ATC 5th,21603356,montelukast,N,PT,35909471,Hepatitis cholestatic,21603356_35909471,montelukast and Hepatitis cholestatic
+ATC 5th,21603356,montelukast,N,PT,35909622,Hepatocellular damage neonatal,21603356_35909622,montelukast and Hepatocellular damage neonatal
+ATC 5th,21603356,montelukast,N,PT,35909624,Hepatocellular injury,21603356_35909624,montelukast and Hepatocellular injury
+ATC 5th,21603356,montelukast,N,PT,36312568,Blood alkaline phosphatase increased,21603356_36312568,montelukast and Blood alkaline phosphatase increased
+ATC 5th,21603356,montelukast,N,PT,36312566,Blood alkaline phosphatase abnormal,21603356_36312566,montelukast and Blood alkaline phosphatase abnormal
+ATC 5th,21603356,montelukast,N,PT,35909628,Mixed liver injury,21603356_35909628,montelukast and Mixed liver injury
+ATC 5th,21603356,montelukast,N,PT,35909503,Liver injury,21603356_35909503,montelukast and Liver injury
+ATC 5th,21603356,montelukast,N,PT,36313543,Bilirubin conjugated abnormal,21603356_36313543,montelukast and Bilirubin conjugated abnormal
+ATC 5th,21603356,montelukast,N,PT,35909606,Cholestatic liver injury,21603356_35909606,montelukast and Cholestatic liver injury
+ATC 5th,21603356,montelukast,N,PT,42889492,Acute yellow liver atrophy,21603356_42889492,montelukast and Acute yellow liver atrophy
+ATC 5th,21603356,montelukast,N,PT,42889495,Drug-induced liver injury,21603356_42889495,montelukast and Drug-induced liver injury
+ATC 5th,21603356,montelukast,N,PT,36009756,Anaphylactic reaction,21603356_36009756,montelukast and Anaphylactic reaction
+ATC 5th,21603356,montelukast,N,PT,36009707,Erythema multiforme,21603356_36009707,montelukast and Erythema multiforme
+ATC 5th,21603356,montelukast,N,PT,36045217,Fixed drug eruption,21603356_36045217,montelukast and Fixed drug eruption
+ATC 5th,21603356,montelukast,N,PT,35607134,Oculomucocutaneous syndrome,21603356_35607134,montelukast and Oculomucocutaneous syndrome
+ATC 5th,21603356,montelukast,N,PT,37320187,Rash papular,21603356_37320187,montelukast and Rash papular
+ATC 5th,21603356,montelukast,N,PT,36009724,Stevens-Johnson syndrome,21603356_36009724,montelukast and Stevens-Johnson syndrome
+ATC 5th,21603356,montelukast,N,PT,36009754,Toxic epidermal necrolysis,21603356_36009754,montelukast and Toxic epidermal necrolysis
+ATC 5th,21603356,montelukast,N,PT,36009755,Toxic skin eruption,21603356_36009755,montelukast and Toxic skin eruption
+ATC 5th,21603356,montelukast,N,PT,36313175,Platelet count abnormal,21603356_36313175,montelukast and Platelet count abnormal
+ATC 5th,21603356,montelukast,N,PT,36313176,Platelet count decreased,21603356_36313176,montelukast and Platelet count decreased
+ATC 5th,21603356,montelukast,N,PT,35104678,Platelet destruction increased,21603356_35104678,montelukast and Platelet destruction increased
+ATC 5th,21603356,montelukast,N,PT,35104679,Platelet disorder,21603356_35104679,montelukast and Platelet disorder
+ATC 5th,21603356,montelukast,N,PT,35104690,Platelet production decreased,21603356_35104690,montelukast and Platelet production decreased
+ATC 5th,21603356,montelukast,N,PT,35104182,Purpura neonatal,21603356_35104182,montelukast and Purpura neonatal
+ATC 5th,21603356,montelukast,N,PT,35104691,Thrombocytopenia,21603356_35104691,montelukast and Thrombocytopenia
+ATC 5th,21603356,montelukast,N,PT,35104692,Thrombocytopenia neonatal,21603356_35104692,montelukast and Thrombocytopenia neonatal
+ATC 5th,21603356,montelukast,N,PT,35104693,Thrombocytopenic purpura,21603356_35104693,montelukast and Thrombocytopenic purpura
+ATC 5th,21603356,montelukast,N,PT,35104688,Heparin-induced thrombocytopenia,21603356_35104688,montelukast and Heparin-induced thrombocytopenia
+ATC 5th,21603356,montelukast,N,PT,42889748,Heparin-induced thrombocytopenia test positive,21603356_42889748,montelukast and Heparin-induced thrombocytopenia test positive
+ATC 5th,21603356,montelukast,N,PT,42888927,Non-immune heparin associated thrombocytopenia,21603356_42888927,montelukast and Non-immune heparin associated thrombocytopenia
+ATC 5th,21603967,ibuprofen,N,PT,36313522,Alanine aminotransferase abnormal,21603967_36313522,ibuprofen and Alanine aminotransferase abnormal
+ATC 5th,21603967,ibuprofen,N,PT,36313524,Alanine aminotransferase increased,21603967_36313524,ibuprofen and Alanine aminotransferase increased
+ATC 5th,21603967,ibuprofen,N,PT,35909522,Biliary cirrhosis,21603967_35909522,ibuprofen and Biliary cirrhosis
+ATC 5th,21603967,ibuprofen,N,PT,36313544,Bilirubin conjugated increased,21603967_36313544,ibuprofen and Bilirubin conjugated increased
+ATC 5th,21603967,ibuprofen,N,PT,35909527,Hepatic cirrhosis,21603967_35909527,ibuprofen and Hepatic cirrhosis
+ATC 5th,21603967,ibuprofen,N,PT,35909611,Hepatic necrosis,21603967_35909611,ibuprofen and Hepatic necrosis
+ATC 5th,21603967,ibuprofen,N,PT,35909471,Hepatitis cholestatic,21603967_35909471,ibuprofen and Hepatitis cholestatic
+ATC 5th,21603967,ibuprofen,N,PT,35909622,Hepatocellular damage neonatal,21603967_35909622,ibuprofen and Hepatocellular damage neonatal
+ATC 5th,21603967,ibuprofen,N,PT,35909624,Hepatocellular injury,21603967_35909624,ibuprofen and Hepatocellular injury
+ATC 5th,21603967,ibuprofen,N,PT,36312568,Blood alkaline phosphatase increased,21603967_36312568,ibuprofen and Blood alkaline phosphatase increased
+ATC 5th,21603967,ibuprofen,N,PT,36312566,Blood alkaline phosphatase abnormal,21603967_36312566,ibuprofen and Blood alkaline phosphatase abnormal
+ATC 5th,21603967,ibuprofen,N,PT,35909628,Mixed liver injury,21603967_35909628,ibuprofen and Mixed liver injury
+ATC 5th,21603967,ibuprofen,N,PT,35909503,Liver injury,21603967_35909503,ibuprofen and Liver injury
+ATC 5th,21603967,ibuprofen,N,PT,36313543,Bilirubin conjugated abnormal,21603967_36313543,ibuprofen and Bilirubin conjugated abnormal
+ATC 5th,21603967,ibuprofen,N,PT,35909606,Cholestatic liver injury,21603967_35909606,ibuprofen and Cholestatic liver injury
+ATC 5th,21603967,ibuprofen,N,PT,42889492,Acute yellow liver atrophy,21603967_42889492,ibuprofen and Acute yellow liver atrophy
+ATC 5th,21603967,ibuprofen,N,PT,42889495,Drug-induced liver injury,21603967_42889495,ibuprofen and Drug-induced liver injury
+ATC 5th,21603967,ibuprofen,N,PT,36919145,Acute psychosis,21603967_36919145,ibuprofen and Acute psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36919053,Affective disorder,21603967_36919053,ibuprofen and Affective disorder
+ATC 5th,21603967,ibuprofen,N,PT,36918968,Delusion,21603967_36918968,ibuprofen and Delusion
+ATC 5th,21603967,ibuprofen,N,PT,36918969,Delusion of grandeur,21603967_36918969,ibuprofen and Delusion of grandeur
+ATC 5th,21603967,ibuprofen,N,PT,36918970,Delusion of reference,21603967_36918970,ibuprofen and Delusion of reference
+ATC 5th,21603967,ibuprofen,N,PT,36918971,Delusion of replacement,21603967_36918971,ibuprofen and Delusion of replacement
+ATC 5th,21603967,ibuprofen,N,PT,36918974,Erotomanic delusion,21603967_36918974,ibuprofen and Erotomanic delusion
+ATC 5th,21603967,ibuprofen,N,PT,36919067,Grandiosity,21603967_36919067,ibuprofen and Grandiosity
+ATC 5th,21603967,ibuprofen,N,PT,36918975,Jealous delusion,21603967_36918975,ibuprofen and Jealous delusion
+ATC 5th,21603967,ibuprofen,N,PT,36919075,Paranoia,21603967_36919075,ibuprofen and Paranoia
+ATC 5th,21603967,ibuprofen,N,PT,36918976,Persecutory delusion,21603967_36918976,ibuprofen and Persecutory delusion
+ATC 5th,21603967,ibuprofen,N,PT,36919154,Schizoaffective disorder,21603967_36919154,ibuprofen and Schizoaffective disorder
+ATC 5th,21603967,ibuprofen,N,PT,36919152,Senile psychosis,21603967_36919152,ibuprofen and Senile psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36919153,Shared psychotic disorder,21603967_36919153,ibuprofen and Shared psychotic disorder
+ATC 5th,21603967,ibuprofen,N,PT,36918977,Somatic delusion,21603967_36918977,ibuprofen and Somatic delusion
+ATC 5th,21603967,ibuprofen,N,PT,36919151,Reactive psychosis,21603967_36919151,ibuprofen and Reactive psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36919136,Transient psychosis,21603967_36919136,ibuprofen and Transient psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36919033,Bipolar disorder,21603967_36919033,ibuprofen and Bipolar disorder
+ATC 5th,21603967,ibuprofen,N,PT,36718514,Epileptic psychosis,21603967_36718514,ibuprofen and Epileptic psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36919146,Childhood psychosis,21603967_36919146,ibuprofen and Childhood psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36919149,Psychotic disorder,21603967_36919149,ibuprofen and Psychotic disorder
+ATC 5th,21603967,ibuprofen,N,PT,36919147,Hysterical psychosis,21603967_36919147,ibuprofen and Hysterical psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36918973,Depressive delusion,21603967_36918973,ibuprofen and Depressive delusion
+ATC 5th,21603967,ibuprofen,N,PT,36211642,Psychosis postoperative,21603967_36211642,ibuprofen and Psychosis postoperative
+ATC 5th,21603967,ibuprofen,N,PT,42890510,Postictal psychosis,21603967_42890510,ibuprofen and Postictal psychosis
+ATC 5th,21603967,ibuprofen,N,PT,36919230,Completed suicide,21603967_36919230,ibuprofen and Completed suicide
+ATC 5th,21603967,ibuprofen,N,PT,36919236,Suicide attempt,21603967_36919236,ibuprofen and Suicide attempt
+ATC 5th,21603967,ibuprofen,N,PT,36313175,Platelet count abnormal,21603967_36313175,ibuprofen and Platelet count abnormal
+ATC 5th,21603967,ibuprofen,N,PT,36313176,Platelet count decreased,21603967_36313176,ibuprofen and Platelet count decreased
+ATC 5th,21603967,ibuprofen,N,PT,35104678,Platelet destruction increased,21603967_35104678,ibuprofen and Platelet destruction increased
+ATC 5th,21603967,ibuprofen,N,PT,35104679,Platelet disorder,21603967_35104679,ibuprofen and Platelet disorder
+ATC 5th,21603967,ibuprofen,N,PT,35104690,Platelet production decreased,21603967_35104690,ibuprofen and Platelet production decreased
+ATC 5th,21603967,ibuprofen,N,PT,35104182,Purpura neonatal,21603967_35104182,ibuprofen and Purpura neonatal
+ATC 5th,21603967,ibuprofen,N,PT,35104691,Thrombocytopenia,21603967_35104691,ibuprofen and Thrombocytopenia
+ATC 5th,21603967,ibuprofen,N,PT,35104692,Thrombocytopenia neonatal,21603967_35104692,ibuprofen and Thrombocytopenia neonatal
+ATC 5th,21603967,ibuprofen,N,PT,35104693,Thrombocytopenic purpura,21603967_35104693,ibuprofen and Thrombocytopenic purpura
+ATC 5th,21603967,ibuprofen,N,PT,35104688,Heparin-induced thrombocytopenia,21603967_35104688,ibuprofen and Heparin-induced thrombocytopenia
+ATC 5th,21603967,ibuprofen,N,PT,42889748,Heparin-induced thrombocytopenia test positive,21603967_42889748,ibuprofen and Heparin-induced thrombocytopenia test positive
+ATC 5th,21603967,ibuprofen,N,PT,42888927,Non-immune heparin associated thrombocytopenia,21603967_42888927,ibuprofen and Non-immune heparin associated thrombocytopenia
+ATC 5th,21604757,methylphenidate,N,PT,36315573,Blood creatinine abnormal,21604757_36315573,methylphenidate and Blood creatinine abnormal
+ATC 5th,21604757,methylphenidate,N,PT,36315575,Blood creatinine increased,21604757_36315575,methylphenidate and Blood creatinine increased
+ATC 5th,21604757,methylphenidate,N,PT,36315595,Creatinine renal clearance decreased,21604757_36315595,methylphenidate and Creatinine renal clearance decreased
+ATC 5th,21604757,methylphenidate,N,PT,36315611,Inulin renal clearance decreased,21604757_36315611,methylphenidate and Inulin renal clearance decreased
+ATC 5th,21604757,methylphenidate,N,PT,37019353,Renal cortical necrosis,21604757_37019353,methylphenidate and Renal cortical necrosis
+ATC 5th,21604757,methylphenidate,N,PT,35506541,Renal papillary necrosis,21604757_35506541,methylphenidate and Renal papillary necrosis
+ATC 5th,21604757,methylphenidate,N,PT,36315599,Creatinine urine decreased,21604757_36315599,methylphenidate and Creatinine urine decreased
+ATC 5th,21604757,methylphenidate,N,PT,36315594,Creatinine renal clearance abnormal,21604757_36315594,methylphenidate and Creatinine renal clearance abnormal
+ATC 5th,21604757,methylphenidate,N,PT,36313522,Alanine aminotransferase abnormal,21604757_36313522,methylphenidate and Alanine aminotransferase abnormal
+ATC 5th,21604757,methylphenidate,N,PT,36313524,Alanine aminotransferase increased,21604757_36313524,methylphenidate and Alanine aminotransferase increased
+ATC 5th,21604757,methylphenidate,N,PT,35909522,Biliary cirrhosis,21604757_35909522,methylphenidate and Biliary cirrhosis
+ATC 5th,21604757,methylphenidate,N,PT,36313544,Bilirubin conjugated increased,21604757_36313544,methylphenidate and Bilirubin conjugated increased
+ATC 5th,21604757,methylphenidate,N,PT,35909527,Hepatic cirrhosis,21604757_35909527,methylphenidate and Hepatic cirrhosis
+ATC 5th,21604757,methylphenidate,N,PT,35909611,Hepatic necrosis,21604757_35909611,methylphenidate and Hepatic necrosis
+ATC 5th,21604757,methylphenidate,N,PT,35909471,Hepatitis cholestatic,21604757_35909471,methylphenidate and Hepatitis cholestatic
+ATC 5th,21604757,methylphenidate,N,PT,35909622,Hepatocellular damage neonatal,21604757_35909622,methylphenidate and Hepatocellular damage neonatal
+ATC 5th,21604757,methylphenidate,N,PT,35909624,Hepatocellular injury,21604757_35909624,methylphenidate and Hepatocellular injury
+ATC 5th,21604757,methylphenidate,N,PT,36312568,Blood alkaline phosphatase increased,21604757_36312568,methylphenidate and Blood alkaline phosphatase increased
+ATC 5th,21604757,methylphenidate,N,PT,36312566,Blood alkaline phosphatase abnormal,21604757_36312566,methylphenidate and Blood alkaline phosphatase abnormal
+ATC 5th,21604757,methylphenidate,N,PT,35909628,Mixed liver injury,21604757_35909628,methylphenidate and Mixed liver injury
+ATC 5th,21604757,methylphenidate,N,PT,35909503,Liver injury,21604757_35909503,methylphenidate and Liver injury
+ATC 5th,21604757,methylphenidate,N,PT,36313543,Bilirubin conjugated abnormal,21604757_36313543,methylphenidate and Bilirubin conjugated abnormal
+ATC 5th,21604757,methylphenidate,N,PT,35909606,Cholestatic liver injury,21604757_35909606,methylphenidate and Cholestatic liver injury
+ATC 5th,21604757,methylphenidate,N,PT,42889492,Acute yellow liver atrophy,21604757_42889492,methylphenidate and Acute yellow liver atrophy
+ATC 5th,21604757,methylphenidate,N,PT,42889495,Drug-induced liver injury,21604757_42889495,methylphenidate and Drug-induced liver injury
+ATC 5th,21604757,methylphenidate,N,PT,36009756,Anaphylactic reaction,21604757_36009756,methylphenidate and Anaphylactic reaction
+ATC 5th,21604757,methylphenidate,N,PT,36009707,Erythema multiforme,21604757_36009707,methylphenidate and Erythema multiforme
+ATC 5th,21604757,methylphenidate,N,PT,36045217,Fixed drug eruption,21604757_36045217,methylphenidate and Fixed drug eruption
+ATC 5th,21604757,methylphenidate,N,PT,35607134,Oculomucocutaneous syndrome,21604757_35607134,methylphenidate and Oculomucocutaneous syndrome
+ATC 5th,21604757,methylphenidate,N,PT,37320187,Rash papular,21604757_37320187,methylphenidate and Rash papular
+ATC 5th,21604757,methylphenidate,N,PT,36009724,Stevens-Johnson syndrome,21604757_36009724,methylphenidate and Stevens-Johnson syndrome
+ATC 5th,21604757,methylphenidate,N,PT,36009754,Toxic epidermal necrolysis,21604757_36009754,methylphenidate and Toxic epidermal necrolysis
+ATC 5th,21604757,methylphenidate,N,PT,36009755,Toxic skin eruption,21604757_36009755,methylphenidate and Toxic skin eruption
+ATC 5th,21604757,methylphenidate,N,PT,36919230,Completed suicide,21604757_36919230,methylphenidate and Completed suicide
+ATC 5th,21604757,methylphenidate,N,PT,36919236,Suicide attempt,21604757_36919236,methylphenidate and Suicide attempt
+ATC 5th,21604757,methylphenidate,N,PT,36313175,Platelet count abnormal,21604757_36313175,methylphenidate and Platelet count abnormal
+ATC 5th,21604757,methylphenidate,N,PT,36313176,Platelet count decreased,21604757_36313176,methylphenidate and Platelet count decreased
+ATC 5th,21604757,methylphenidate,N,PT,35104678,Platelet destruction increased,21604757_35104678,methylphenidate and Platelet destruction increased
+ATC 5th,21604757,methylphenidate,N,PT,35104679,Platelet disorder,21604757_35104679,methylphenidate and Platelet disorder
+ATC 5th,21604757,methylphenidate,N,PT,35104690,Platelet production decreased,21604757_35104690,methylphenidate and Platelet production decreased
+ATC 5th,21604757,methylphenidate,N,PT,35104182,Purpura neonatal,21604757_35104182,methylphenidate and Purpura neonatal
+ATC 5th,21604757,methylphenidate,N,PT,35104691,Thrombocytopenia,21604757_35104691,methylphenidate and Thrombocytopenia
+ATC 5th,21604757,methylphenidate,N,PT,35104692,Thrombocytopenia neonatal,21604757_35104692,methylphenidate and Thrombocytopenia neonatal
+ATC 5th,21604757,methylphenidate,N,PT,35104693,Thrombocytopenic purpura,21604757_35104693,methylphenidate and Thrombocytopenic purpura
+ATC 5th,21604757,methylphenidate,N,PT,35104688,Heparin-induced thrombocytopenia,21604757_35104688,methylphenidate and Heparin-induced thrombocytopenia
+ATC 5th,21604757,methylphenidate,N,PT,42889748,Heparin-induced thrombocytopenia test positive,21604757_42889748,methylphenidate and Heparin-induced thrombocytopenia test positive
+ATC 5th,21604757,methylphenidate,N,PT,42888927,Non-immune heparin associated thrombocytopenia,21604757_42888927,methylphenidate and Non-immune heparin associated thrombocytopenia
+ATC 5th,21604941,mebendazole,N,PT,36315573,Blood creatinine abnormal,21604941_36315573,mebendazole and Blood creatinine abnormal
+ATC 5th,21604941,mebendazole,N,PT,36315575,Blood creatinine increased,21604941_36315575,mebendazole and Blood creatinine increased
+ATC 5th,21604941,mebendazole,N,PT,36315595,Creatinine renal clearance decreased,21604941_36315595,mebendazole and Creatinine renal clearance decreased
+ATC 5th,21604941,mebendazole,N,PT,36315611,Inulin renal clearance decreased,21604941_36315611,mebendazole and Inulin renal clearance decreased
+ATC 5th,21604941,mebendazole,N,PT,37019353,Renal cortical necrosis,21604941_37019353,mebendazole and Renal cortical necrosis
+ATC 5th,21604941,mebendazole,N,PT,35506541,Renal papillary necrosis,21604941_35506541,mebendazole and Renal papillary necrosis
+ATC 5th,21604941,mebendazole,N,PT,36315599,Creatinine urine decreased,21604941_36315599,mebendazole and Creatinine urine decreased
+ATC 5th,21604941,mebendazole,N,PT,36315594,Creatinine renal clearance abnormal,21604941_36315594,mebendazole and Creatinine renal clearance abnormal
+ATC 5th,21604941,mebendazole,N,PT,36009756,Anaphylactic reaction,21604941_36009756,mebendazole and Anaphylactic reaction
+ATC 5th,21604941,mebendazole,N,PT,36009707,Erythema multiforme,21604941_36009707,mebendazole and Erythema multiforme
+ATC 5th,21604941,mebendazole,N,PT,36045217,Fixed drug eruption,21604941_36045217,mebendazole and Fixed drug eruption
+ATC 5th,21604941,mebendazole,N,PT,35607134,Oculomucocutaneous syndrome,21604941_35607134,mebendazole and Oculomucocutaneous syndrome
+ATC 5th,21604941,mebendazole,N,PT,37320187,Rash papular,21604941_37320187,mebendazole and Rash papular
+ATC 5th,21604941,mebendazole,N,PT,36009724,Stevens-Johnson syndrome,21604941_36009724,mebendazole and Stevens-Johnson syndrome
+ATC 5th,21604941,mebendazole,N,PT,36009754,Toxic epidermal necrolysis,21604941_36009754,mebendazole and Toxic epidermal necrolysis
+ATC 5th,21604941,mebendazole,N,PT,36009755,Toxic skin eruption,21604941_36009755,mebendazole and Toxic skin eruption
+ATC 5th,21604941,mebendazole,N,PT,36919145,Acute psychosis,21604941_36919145,mebendazole and Acute psychosis
+ATC 5th,21604941,mebendazole,N,PT,36919053,Affective disorder,21604941_36919053,mebendazole and Affective disorder
+ATC 5th,21604941,mebendazole,N,PT,36918968,Delusion,21604941_36918968,mebendazole and Delusion
+ATC 5th,21604941,mebendazole,N,PT,36918969,Delusion of grandeur,21604941_36918969,mebendazole and Delusion of grandeur
+ATC 5th,21604941,mebendazole,N,PT,36918970,Delusion of reference,21604941_36918970,mebendazole and Delusion of reference
+ATC 5th,21604941,mebendazole,N,PT,36918971,Delusion of replacement,21604941_36918971,mebendazole and Delusion of replacement
+ATC 5th,21604941,mebendazole,N,PT,36918974,Erotomanic delusion,21604941_36918974,mebendazole and Erotomanic delusion
+ATC 5th,21604941,mebendazole,N,PT,36919067,Grandiosity,21604941_36919067,mebendazole and Grandiosity
+ATC 5th,21604941,mebendazole,N,PT,36918975,Jealous delusion,21604941_36918975,mebendazole and Jealous delusion
+ATC 5th,21604941,mebendazole,N,PT,36919075,Paranoia,21604941_36919075,mebendazole and Paranoia
+ATC 5th,21604941,mebendazole,N,PT,36918976,Persecutory delusion,21604941_36918976,mebendazole and Persecutory delusion
+ATC 5th,21604941,mebendazole,N,PT,36919154,Schizoaffective disorder,21604941_36919154,mebendazole and Schizoaffective disorder
+ATC 5th,21604941,mebendazole,N,PT,36919152,Senile psychosis,21604941_36919152,mebendazole and Senile psychosis
+ATC 5th,21604941,mebendazole,N,PT,36919153,Shared psychotic disorder,21604941_36919153,mebendazole and Shared psychotic disorder
+ATC 5th,21604941,mebendazole,N,PT,36918977,Somatic delusion,21604941_36918977,mebendazole and Somatic delusion
+ATC 5th,21604941,mebendazole,N,PT,36919151,Reactive psychosis,21604941_36919151,mebendazole and Reactive psychosis
+ATC 5th,21604941,mebendazole,N,PT,36919136,Transient psychosis,21604941_36919136,mebendazole and Transient psychosis
+ATC 5th,21604941,mebendazole,N,PT,36919033,Bipolar disorder,21604941_36919033,mebendazole and Bipolar disorder
+ATC 5th,21604941,mebendazole,N,PT,36718514,Epileptic psychosis,21604941_36718514,mebendazole and Epileptic psychosis
+ATC 5th,21604941,mebendazole,N,PT,36919146,Childhood psychosis,21604941_36919146,mebendazole and Childhood psychosis
+ATC 5th,21604941,mebendazole,N,PT,36919149,Psychotic disorder,21604941_36919149,mebendazole and Psychotic disorder
+ATC 5th,21604941,mebendazole,N,PT,36919147,Hysterical psychosis,21604941_36919147,mebendazole and Hysterical psychosis
+ATC 5th,21604941,mebendazole,N,PT,36918973,Depressive delusion,21604941_36918973,mebendazole and Depressive delusion
+ATC 5th,21604941,mebendazole,N,PT,36211642,Psychosis postoperative,21604941_36211642,mebendazole and Psychosis postoperative
+ATC 5th,21604941,mebendazole,N,PT,42890510,Postictal psychosis,21604941_42890510,mebendazole and Postictal psychosis
+ATC 5th,21604941,mebendazole,N,PT,36919230,Completed suicide,21604941_36919230,mebendazole and Completed suicide
+ATC 5th,21604941,mebendazole,N,PT,36919236,Suicide attempt,21604941_36919236,mebendazole and Suicide attempt
+ATC 5th,21604941,mebendazole,N,PT,36313175,Platelet count abnormal,21604941_36313175,mebendazole and Platelet count abnormal
+ATC 5th,21604941,mebendazole,N,PT,36313176,Platelet count decreased,21604941_36313176,mebendazole and Platelet count decreased
+ATC 5th,21604941,mebendazole,N,PT,35104678,Platelet destruction increased,21604941_35104678,mebendazole and Platelet destruction increased
+ATC 5th,21604941,mebendazole,N,PT,35104679,Platelet disorder,21604941_35104679,mebendazole and Platelet disorder
+ATC 5th,21604941,mebendazole,N,PT,35104690,Platelet production decreased,21604941_35104690,mebendazole and Platelet production decreased
+ATC 5th,21604941,mebendazole,N,PT,35104182,Purpura neonatal,21604941_35104182,mebendazole and Purpura neonatal
+ATC 5th,21604941,mebendazole,N,PT,35104691,Thrombocytopenia,21604941_35104691,mebendazole and Thrombocytopenia
+ATC 5th,21604941,mebendazole,N,PT,35104692,Thrombocytopenia neonatal,21604941_35104692,mebendazole and Thrombocytopenia neonatal
+ATC 5th,21604941,mebendazole,N,PT,35104693,Thrombocytopenic purpura,21604941_35104693,mebendazole and Thrombocytopenic purpura
+ATC 5th,21604941,mebendazole,N,PT,35104688,Heparin-induced thrombocytopenia,21604941_35104688,mebendazole and Heparin-induced thrombocytopenia
+ATC 5th,21604941,mebendazole,N,PT,42889748,Heparin-induced thrombocytopenia test positive,21604941_42889748,mebendazole and Heparin-induced thrombocytopenia test positive
+ATC 5th,21604941,mebendazole,N,PT,42888927,Non-immune heparin associated thrombocytopenia,21604941_42888927,mebendazole and Non-immune heparin associated thrombocytopenia
+ATC 5th,21602320,isotretinoin,P,PT,36919145,Acute psychosis,21602320_36919145,isotretinoin and Acute psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36919053,Affective disorder,21602320_36919053,isotretinoin and Affective disorder
+ATC 5th,21602320,isotretinoin,P,PT,36918968,Delusion,21602320_36918968,isotretinoin and Delusion
+ATC 5th,21602320,isotretinoin,P,PT,36918969,Delusion of grandeur,21602320_36918969,isotretinoin and Delusion of grandeur
+ATC 5th,21602320,isotretinoin,P,PT,36918970,Delusion of reference,21602320_36918970,isotretinoin and Delusion of reference
+ATC 5th,21602320,isotretinoin,P,PT,36918971,Delusion of replacement,21602320_36918971,isotretinoin and Delusion of replacement
+ATC 5th,21602320,isotretinoin,P,PT,36918974,Erotomanic delusion,21602320_36918974,isotretinoin and Erotomanic delusion
+ATC 5th,21602320,isotretinoin,P,PT,36919067,Grandiosity,21602320_36919067,isotretinoin and Grandiosity
+ATC 5th,21602320,isotretinoin,P,PT,36918975,Jealous delusion,21602320_36918975,isotretinoin and Jealous delusion
+ATC 5th,21602320,isotretinoin,P,PT,36919075,Paranoia,21602320_36919075,isotretinoin and Paranoia
+ATC 5th,21602320,isotretinoin,P,PT,36918976,Persecutory delusion,21602320_36918976,isotretinoin and Persecutory delusion
+ATC 5th,21602320,isotretinoin,P,PT,36919154,Schizoaffective disorder,21602320_36919154,isotretinoin and Schizoaffective disorder
+ATC 5th,21602320,isotretinoin,P,PT,36919152,Senile psychosis,21602320_36919152,isotretinoin and Senile psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36919153,Shared psychotic disorder,21602320_36919153,isotretinoin and Shared psychotic disorder
+ATC 5th,21602320,isotretinoin,P,PT,36918977,Somatic delusion,21602320_36918977,isotretinoin and Somatic delusion
+ATC 5th,21602320,isotretinoin,P,PT,36919151,Reactive psychosis,21602320_36919151,isotretinoin and Reactive psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36919136,Transient psychosis,21602320_36919136,isotretinoin and Transient psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36919033,Bipolar disorder,21602320_36919033,isotretinoin and Bipolar disorder
+ATC 5th,21602320,isotretinoin,P,PT,36718514,Epileptic psychosis,21602320_36718514,isotretinoin and Epileptic psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36919146,Childhood psychosis,21602320_36919146,isotretinoin and Childhood psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36919149,Psychotic disorder,21602320_36919149,isotretinoin and Psychotic disorder
+ATC 5th,21602320,isotretinoin,P,PT,36919147,Hysterical psychosis,21602320_36919147,isotretinoin and Hysterical psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36918973,Depressive delusion,21602320_36918973,isotretinoin and Depressive delusion
+ATC 5th,21602320,isotretinoin,P,PT,36211642,Psychosis postoperative,21602320_36211642,isotretinoin and Psychosis postoperative
+ATC 5th,21602320,isotretinoin,P,PT,42890510,Postictal psychosis,21602320_42890510,isotretinoin and Postictal psychosis
+ATC 5th,21602320,isotretinoin,P,PT,36919230,Completed suicide,21602320_36919230,isotretinoin and Completed suicide
+ATC 5th,21602320,isotretinoin,P,PT,36919236,Suicide attempt,21602320_36919236,isotretinoin and Suicide attempt
+ATC 5th,21602800,doxycycline,P,PT,36009707,Erythema multiforme,21602800_36009707,doxycycline and Erythema multiforme
+ATC 5th,21602800,doxycycline,P,PT,36045217,Fixed drug eruption,21602800_36045217,doxycycline and Fixed drug eruption
+ATC 5th,21602800,doxycycline,P,PT,35607134,Oculomucocutaneous syndrome,21602800_35607134,doxycycline and Oculomucocutaneous syndrome
+ATC 5th,21602800,doxycycline,P,PT,37320187,Rash papular,21602800_37320187,doxycycline and Rash papular
+ATC 5th,21602800,doxycycline,P,PT,36009724,Stevens-Johnson syndrome,21602800_36009724,doxycycline and Stevens-Johnson syndrome
+ATC 5th,21602800,doxycycline,P,PT,36009754,Toxic epidermal necrolysis,21602800_36009754,doxycycline and Toxic epidermal necrolysis
+ATC 5th,21602800,doxycycline,P,PT,36009755,Toxic skin eruption,21602800_36009755,doxycycline and Toxic skin eruption
+ATC 5th,21602977,clarithromycin,P,PT,36313522,Alanine aminotransferase abnormal,21602977_36313522,clarithromycin and Alanine aminotransferase abnormal
+ATC 5th,21602977,clarithromycin,P,PT,36313524,Alanine aminotransferase increased,21602977_36313524,clarithromycin and Alanine aminotransferase increased
+ATC 5th,21602977,clarithromycin,P,PT,35909522,Biliary cirrhosis,21602977_35909522,clarithromycin and Biliary cirrhosis
+ATC 5th,21602977,clarithromycin,P,PT,36313544,Bilirubin conjugated increased,21602977_36313544,clarithromycin and Bilirubin conjugated increased
+ATC 5th,21602977,clarithromycin,P,PT,35909527,Hepatic cirrhosis,21602977_35909527,clarithromycin and Hepatic cirrhosis
+ATC 5th,21602977,clarithromycin,P,PT,35909611,Hepatic necrosis,21602977_35909611,clarithromycin and Hepatic necrosis
+ATC 5th,21602977,clarithromycin,P,PT,35909471,Hepatitis cholestatic,21602977_35909471,clarithromycin and Hepatitis cholestatic
+ATC 5th,21602977,clarithromycin,P,PT,35909622,Hepatocellular damage neonatal,21602977_35909622,clarithromycin and Hepatocellular damage neonatal
+ATC 5th,21602977,clarithromycin,P,PT,35909624,Hepatocellular injury,21602977_35909624,clarithromycin and Hepatocellular injury
+ATC 5th,21602977,clarithromycin,P,PT,36312568,Blood alkaline phosphatase increased,21602977_36312568,clarithromycin and Blood alkaline phosphatase increased
+ATC 5th,21602977,clarithromycin,P,PT,36312566,Blood alkaline phosphatase abnormal,21602977_36312566,clarithromycin and Blood alkaline phosphatase abnormal
+ATC 5th,21602977,clarithromycin,P,PT,35909628,Mixed liver injury,21602977_35909628,clarithromycin and Mixed liver injury
+ATC 5th,21602977,clarithromycin,P,PT,35909503,Liver injury,21602977_35909503,clarithromycin and Liver injury
+ATC 5th,21602977,clarithromycin,P,PT,36313543,Bilirubin conjugated abnormal,21602977_36313543,clarithromycin and Bilirubin conjugated abnormal
+ATC 5th,21602977,clarithromycin,P,PT,35909606,Cholestatic liver injury,21602977_35909606,clarithromycin and Cholestatic liver injury
+ATC 5th,21602977,clarithromycin,P,PT,42889492,Acute yellow liver atrophy,21602977_42889492,clarithromycin and Acute yellow liver atrophy
+ATC 5th,21602977,clarithromycin,P,PT,42889495,Drug-induced liver injury,21602977_42889495,clarithromycin and Drug-induced liver injury
+ATC 5th,21602977,clarithromycin,P,PT,36009707,Erythema multiforme,21602977_36009707,clarithromycin and Erythema multiforme
+ATC 5th,21602977,clarithromycin,P,PT,36045217,Fixed drug eruption,21602977_36045217,clarithromycin and Fixed drug eruption
+ATC 5th,21602977,clarithromycin,P,PT,35607134,Oculomucocutaneous syndrome,21602977_35607134,clarithromycin and Oculomucocutaneous syndrome
+ATC 5th,21602977,clarithromycin,P,PT,37320187,Rash papular,21602977_37320187,clarithromycin and Rash papular
+ATC 5th,21602977,clarithromycin,P,PT,36009724,Stevens-Johnson syndrome,21602977_36009724,clarithromycin and Stevens-Johnson syndrome
+ATC 5th,21602977,clarithromycin,P,PT,36009754,Toxic epidermal necrolysis,21602977_36009754,clarithromycin and Toxic epidermal necrolysis
+ATC 5th,21602977,clarithromycin,P,PT,36009755,Toxic skin eruption,21602977_36009755,clarithromycin and Toxic skin eruption
+ATC 5th,21602977,clarithromycin,P,PT,36313175,Platelet count abnormal,21602977_36313175,clarithromycin and Platelet count abnormal
+ATC 5th,21602977,clarithromycin,P,PT,36313176,Platelet count decreased,21602977_36313176,clarithromycin and Platelet count decreased
+ATC 5th,21602977,clarithromycin,P,PT,35104678,Platelet destruction increased,21602977_35104678,clarithromycin and Platelet destruction increased
+ATC 5th,21602977,clarithromycin,P,PT,35104679,Platelet disorder,21602977_35104679,clarithromycin and Platelet disorder
+ATC 5th,21602977,clarithromycin,P,PT,35104690,Platelet production decreased,21602977_35104690,clarithromycin and Platelet production decreased
+ATC 5th,21602977,clarithromycin,P,PT,35104182,Purpura neonatal,21602977_35104182,clarithromycin and Purpura neonatal
+ATC 5th,21602977,clarithromycin,P,PT,35104691,Thrombocytopenia,21602977_35104691,clarithromycin and Thrombocytopenia
+ATC 5th,21602977,clarithromycin,P,PT,35104692,Thrombocytopenia neonatal,21602977_35104692,clarithromycin and Thrombocytopenia neonatal
+ATC 5th,21602977,clarithromycin,P,PT,35104693,Thrombocytopenic purpura,21602977_35104693,clarithromycin and Thrombocytopenic purpura
+ATC 5th,21602977,clarithromycin,P,PT,35104688,Heparin-induced thrombocytopenia,21602977_35104688,clarithromycin and Heparin-induced thrombocytopenia
+ATC 5th,21602977,clarithromycin,P,PT,42889748,Heparin-induced thrombocytopenia test positive,21602977_42889748,clarithromycin and Heparin-induced thrombocytopenia test positive
+ATC 5th,21602977,clarithromycin,P,PT,42888927,Non-immune heparin associated thrombocytopenia,21602977_42888927,clarithromycin and Non-immune heparin associated thrombocytopenia
+ATC 5th,21603103,isoniazid,P,PT,36313522,Alanine aminotransferase abnormal,21603103_36313522,isoniazid and Alanine aminotransferase abnormal
+ATC 5th,21603103,isoniazid,P,PT,36313524,Alanine aminotransferase increased,21603103_36313524,isoniazid and Alanine aminotransferase increased
+ATC 5th,21603103,isoniazid,P,PT,35909522,Biliary cirrhosis,21603103_35909522,isoniazid and Biliary cirrhosis
+ATC 5th,21603103,isoniazid,P,PT,36313544,Bilirubin conjugated increased,21603103_36313544,isoniazid and Bilirubin conjugated increased
+ATC 5th,21603103,isoniazid,P,PT,35909527,Hepatic cirrhosis,21603103_35909527,isoniazid and Hepatic cirrhosis
+ATC 5th,21603103,isoniazid,P,PT,35909611,Hepatic necrosis,21603103_35909611,isoniazid and Hepatic necrosis
+ATC 5th,21603103,isoniazid,P,PT,35909471,Hepatitis cholestatic,21603103_35909471,isoniazid and Hepatitis cholestatic
+ATC 5th,21603103,isoniazid,P,PT,35909622,Hepatocellular damage neonatal,21603103_35909622,isoniazid and Hepatocellular damage neonatal
+ATC 5th,21603103,isoniazid,P,PT,35909624,Hepatocellular injury,21603103_35909624,isoniazid and Hepatocellular injury
+ATC 5th,21603103,isoniazid,P,PT,36312568,Blood alkaline phosphatase increased,21603103_36312568,isoniazid and Blood alkaline phosphatase increased
+ATC 5th,21603103,isoniazid,P,PT,36312566,Blood alkaline phosphatase abnormal,21603103_36312566,isoniazid and Blood alkaline phosphatase abnormal
+ATC 5th,21603103,isoniazid,P,PT,35909628,Mixed liver injury,21603103_35909628,isoniazid and Mixed liver injury
+ATC 5th,21603103,isoniazid,P,PT,35909503,Liver injury,21603103_35909503,isoniazid and Liver injury
+ATC 5th,21603103,isoniazid,P,PT,36313543,Bilirubin conjugated abnormal,21603103_36313543,isoniazid and Bilirubin conjugated abnormal
+ATC 5th,21603103,isoniazid,P,PT,35909606,Cholestatic liver injury,21603103_35909606,isoniazid and Cholestatic liver injury
+ATC 5th,21603103,isoniazid,P,PT,42889492,Acute yellow liver atrophy,21603103_42889492,isoniazid and Acute yellow liver atrophy
+ATC 5th,21603103,isoniazid,P,PT,42889495,Drug-induced liver injury,21603103_42889495,isoniazid and Drug-induced liver injury
+ATC 5th,21603103,isoniazid,P,PT,36009707,Erythema multiforme,21603103_36009707,isoniazid and Erythema multiforme
+ATC 5th,21603103,isoniazid,P,PT,36045217,Fixed drug eruption,21603103_36045217,isoniazid and Fixed drug eruption
+ATC 5th,21603103,isoniazid,P,PT,35607134,Oculomucocutaneous syndrome,21603103_35607134,isoniazid and Oculomucocutaneous syndrome
+ATC 5th,21603103,isoniazid,P,PT,37320187,Rash papular,21603103_37320187,isoniazid and Rash papular
+ATC 5th,21603103,isoniazid,P,PT,36009724,Stevens-Johnson syndrome,21603103_36009724,isoniazid and Stevens-Johnson syndrome
+ATC 5th,21603103,isoniazid,P,PT,36009754,Toxic epidermal necrolysis,21603103_36009754,isoniazid and Toxic epidermal necrolysis
+ATC 5th,21603103,isoniazid,P,PT,36009755,Toxic skin eruption,21603103_36009755,isoniazid and Toxic skin eruption
+ATC 5th,21603356,montelukast,P,PT,36919145,Acute psychosis,21603356_36919145,montelukast and Acute psychosis
+ATC 5th,21603356,montelukast,P,PT,36919053,Affective disorder,21603356_36919053,montelukast and Affective disorder
+ATC 5th,21603356,montelukast,P,PT,36918968,Delusion,21603356_36918968,montelukast and Delusion
+ATC 5th,21603356,montelukast,P,PT,36918969,Delusion of grandeur,21603356_36918969,montelukast and Delusion of grandeur
+ATC 5th,21603356,montelukast,P,PT,36918970,Delusion of reference,21603356_36918970,montelukast and Delusion of reference
+ATC 5th,21603356,montelukast,P,PT,36918971,Delusion of replacement,21603356_36918971,montelukast and Delusion of replacement
+ATC 5th,21603356,montelukast,P,PT,36918974,Erotomanic delusion,21603356_36918974,montelukast and Erotomanic delusion
+ATC 5th,21603356,montelukast,P,PT,36919067,Grandiosity,21603356_36919067,montelukast and Grandiosity
+ATC 5th,21603356,montelukast,P,PT,36918975,Jealous delusion,21603356_36918975,montelukast and Jealous delusion
+ATC 5th,21603356,montelukast,P,PT,36919075,Paranoia,21603356_36919075,montelukast and Paranoia
+ATC 5th,21603356,montelukast,P,PT,36918976,Persecutory delusion,21603356_36918976,montelukast and Persecutory delusion
+ATC 5th,21603356,montelukast,P,PT,36919154,Schizoaffective disorder,21603356_36919154,montelukast and Schizoaffective disorder
+ATC 5th,21603356,montelukast,P,PT,36919152,Senile psychosis,21603356_36919152,montelukast and Senile psychosis
+ATC 5th,21603356,montelukast,P,PT,36919153,Shared psychotic disorder,21603356_36919153,montelukast and Shared psychotic disorder
+ATC 5th,21603356,montelukast,P,PT,36918977,Somatic delusion,21603356_36918977,montelukast and Somatic delusion
+ATC 5th,21603356,montelukast,P,PT,36919151,Reactive psychosis,21603356_36919151,montelukast and Reactive psychosis
+ATC 5th,21603356,montelukast,P,PT,36919136,Transient psychosis,21603356_36919136,montelukast and Transient psychosis
+ATC 5th,21603356,montelukast,P,PT,36919033,Bipolar disorder,21603356_36919033,montelukast and Bipolar disorder
+ATC 5th,21603356,montelukast,P,PT,36718514,Epileptic psychosis,21603356_36718514,montelukast and Epileptic psychosis
+ATC 5th,21603356,montelukast,P,PT,36919146,Childhood psychosis,21603356_36919146,montelukast and Childhood psychosis
+ATC 5th,21603356,montelukast,P,PT,36919149,Psychotic disorder,21603356_36919149,montelukast and Psychotic disorder
+ATC 5th,21603356,montelukast,P,PT,36919147,Hysterical psychosis,21603356_36919147,montelukast and Hysterical psychosis
+ATC 5th,21603356,montelukast,P,PT,36918973,Depressive delusion,21603356_36918973,montelukast and Depressive delusion
+ATC 5th,21603356,montelukast,P,PT,36211642,Psychosis postoperative,21603356_36211642,montelukast and Psychosis postoperative
+ATC 5th,21603356,montelukast,P,PT,42890510,Postictal psychosis,21603356_42890510,montelukast and Postictal psychosis
+ATC 5th,21603356,montelukast,P,PT,36919230,Completed suicide,21603356_36919230,montelukast and Completed suicide
+ATC 5th,21603356,montelukast,P,PT,36919236,Suicide attempt,21603356_36919236,montelukast and Suicide attempt
+ATC 5th,21603967,ibuprofen,P,PT,36315573,Blood creatinine abnormal,21603967_36315573,ibuprofen and Blood creatinine abnormal
+ATC 5th,21603967,ibuprofen,P,PT,36315575,Blood creatinine increased,21603967_36315575,ibuprofen and Blood creatinine increased
+ATC 5th,21603967,ibuprofen,P,PT,36315595,Creatinine renal clearance decreased,21603967_36315595,ibuprofen and Creatinine renal clearance decreased
+ATC 5th,21603967,ibuprofen,P,PT,36315611,Inulin renal clearance decreased,21603967_36315611,ibuprofen and Inulin renal clearance decreased
+ATC 5th,21603967,ibuprofen,P,PT,37019353,Renal cortical necrosis,21603967_37019353,ibuprofen and Renal cortical necrosis
+ATC 5th,21603967,ibuprofen,P,PT,35506541,Renal papillary necrosis,21603967_35506541,ibuprofen and Renal papillary necrosis
+ATC 5th,21603967,ibuprofen,P,PT,36315599,Creatinine urine decreased,21603967_36315599,ibuprofen and Creatinine urine decreased
+ATC 5th,21603967,ibuprofen,P,PT,36315594,Creatinine renal clearance abnormal,21603967_36315594,ibuprofen and Creatinine renal clearance abnormal
+ATC 5th,21603967,ibuprofen,P,PT,36009756,Anaphylactic reaction,21603967_36009756,ibuprofen and Anaphylactic reaction
+ATC 5th,21603967,ibuprofen,P,PT,36009707,Erythema multiforme,21603967_36009707,ibuprofen and Erythema multiforme
+ATC 5th,21603967,ibuprofen,P,PT,36045217,Fixed drug eruption,21603967_36045217,ibuprofen and Fixed drug eruption
+ATC 5th,21603967,ibuprofen,P,PT,35607134,Oculomucocutaneous syndrome,21603967_35607134,ibuprofen and Oculomucocutaneous syndrome
+ATC 5th,21603967,ibuprofen,P,PT,37320187,Rash papular,21603967_37320187,ibuprofen and Rash papular
+ATC 5th,21603967,ibuprofen,P,PT,36009724,Stevens-Johnson syndrome,21603967_36009724,ibuprofen and Stevens-Johnson syndrome
+ATC 5th,21603967,ibuprofen,P,PT,36009754,Toxic epidermal necrolysis,21603967_36009754,ibuprofen and Toxic epidermal necrolysis
+ATC 5th,21603967,ibuprofen,P,PT,36009755,Toxic skin eruption,21603967_36009755,ibuprofen and Toxic skin eruption
+ATC 5th,21604757,methylphenidate,P,PT,36919145,Acute psychosis,21604757_36919145,methylphenidate and Acute psychosis
+ATC 5th,21604757,methylphenidate,P,PT,36919053,Affective disorder,21604757_36919053,methylphenidate and Affective disorder
+ATC 5th,21604757,methylphenidate,P,PT,36918968,Delusion,21604757_36918968,methylphenidate and Delusion
+ATC 5th,21604757,methylphenidate,P,PT,36918969,Delusion of grandeur,21604757_36918969,methylphenidate and Delusion of grandeur
+ATC 5th,21604757,methylphenidate,P,PT,36918970,Delusion of reference,21604757_36918970,methylphenidate and Delusion of reference
+ATC 5th,21604757,methylphenidate,P,PT,36918971,Delusion of replacement,21604757_36918971,methylphenidate and Delusion of replacement
+ATC 5th,21604757,methylphenidate,P,PT,36918974,Erotomanic delusion,21604757_36918974,methylphenidate and Erotomanic delusion
+ATC 5th,21604757,methylphenidate,P,PT,36919067,Grandiosity,21604757_36919067,methylphenidate and Grandiosity
+ATC 5th,21604757,methylphenidate,P,PT,36918975,Jealous delusion,21604757_36918975,methylphenidate and Jealous delusion
+ATC 5th,21604757,methylphenidate,P,PT,36919075,Paranoia,21604757_36919075,methylphenidate and Paranoia
+ATC 5th,21604757,methylphenidate,P,PT,36918976,Persecutory delusion,21604757_36918976,methylphenidate and Persecutory delusion
+ATC 5th,21604757,methylphenidate,P,PT,36919154,Schizoaffective disorder,21604757_36919154,methylphenidate and Schizoaffective disorder
+ATC 5th,21604757,methylphenidate,P,PT,36919152,Senile psychosis,21604757_36919152,methylphenidate and Senile psychosis
+ATC 5th,21604757,methylphenidate,P,PT,36919153,Shared psychotic disorder,21604757_36919153,methylphenidate and Shared psychotic disorder
+ATC 5th,21604757,methylphenidate,P,PT,36918977,Somatic delusion,21604757_36918977,methylphenidate and Somatic delusion
+ATC 5th,21604757,methylphenidate,P,PT,36919151,Reactive psychosis,21604757_36919151,methylphenidate and Reactive psychosis
+ATC 5th,21604757,methylphenidate,P,PT,36919136,Transient psychosis,21604757_36919136,methylphenidate and Transient psychosis
+ATC 5th,21604757,methylphenidate,P,PT,36919033,Bipolar disorder,21604757_36919033,methylphenidate and Bipolar disorder
+ATC 5th,21604757,methylphenidate,P,PT,36718514,Epileptic psychosis,21604757_36718514,methylphenidate and Epileptic psychosis
+ATC 5th,21604757,methylphenidate,P,PT,36919146,Childhood psychosis,21604757_36919146,methylphenidate and Childhood psychosis
+ATC 5th,21604757,methylphenidate,P,PT,36919149,Psychotic disorder,21604757_36919149,methylphenidate and Psychotic disorder
+ATC 5th,21604757,methylphenidate,P,PT,36919147,Hysterical psychosis,21604757_36919147,methylphenidate and Hysterical psychosis
+ATC 5th,21604757,methylphenidate,P,PT,36918973,Depressive delusion,21604757_36918973,methylphenidate and Depressive delusion
+ATC 5th,21604757,methylphenidate,P,PT,36211642,Psychosis postoperative,21604757_36211642,methylphenidate and Psychosis postoperative
+ATC 5th,21604757,methylphenidate,P,PT,42890510,Postictal psychosis,21604757_42890510,methylphenidate and Postictal psychosis
+ATC 5th,21604941,mebendazole,P,PT,36313522,Alanine aminotransferase abnormal,21604941_36313522,mebendazole and Alanine aminotransferase abnormal
+ATC 5th,21604941,mebendazole,P,PT,36313524,Alanine aminotransferase increased,21604941_36313524,mebendazole and Alanine aminotransferase increased
+ATC 5th,21604941,mebendazole,P,PT,35909522,Biliary cirrhosis,21604941_35909522,mebendazole and Biliary cirrhosis
+ATC 5th,21604941,mebendazole,P,PT,36313544,Bilirubin conjugated increased,21604941_36313544,mebendazole and Bilirubin conjugated increased
+ATC 5th,21604941,mebendazole,P,PT,35909527,Hepatic cirrhosis,21604941_35909527,mebendazole and Hepatic cirrhosis
+ATC 5th,21604941,mebendazole,P,PT,35909611,Hepatic necrosis,21604941_35909611,mebendazole and Hepatic necrosis
+ATC 5th,21604941,mebendazole,P,PT,35909471,Hepatitis cholestatic,21604941_35909471,mebendazole and Hepatitis cholestatic
+ATC 5th,21604941,mebendazole,P,PT,35909622,Hepatocellular damage neonatal,21604941_35909622,mebendazole and Hepatocellular damage neonatal
+ATC 5th,21604941,mebendazole,P,PT,35909624,Hepatocellular injury,21604941_35909624,mebendazole and Hepatocellular injury
+ATC 5th,21604941,mebendazole,P,PT,36312568,Blood alkaline phosphatase increased,21604941_36312568,mebendazole and Blood alkaline phosphatase increased
+ATC 5th,21604941,mebendazole,P,PT,36312566,Blood alkaline phosphatase abnormal,21604941_36312566,mebendazole and Blood alkaline phosphatase abnormal
+ATC 5th,21604941,mebendazole,P,PT,35909628,Mixed liver injury,21604941_35909628,mebendazole and Mixed liver injury
+ATC 5th,21604941,mebendazole,P,PT,35909503,Liver injury,21604941_35909503,mebendazole and Liver injury
+ATC 5th,21604941,mebendazole,P,PT,36313543,Bilirubin conjugated abnormal,21604941_36313543,mebendazole and Bilirubin conjugated abnormal
+ATC 5th,21604941,mebendazole,P,PT,35909606,Cholestatic liver injury,21604941_35909606,mebendazole and Cholestatic liver injury
+ATC 5th,21604941,mebendazole,P,PT,42889492,Acute yellow liver atrophy,21604941_42889492,mebendazole and Acute yellow liver atrophy
+ATC 5th,21604941,mebendazole,P,PT,42889495,Drug-induced liver injury,21604941_42889495,mebendazole and Drug-induced liver injury
