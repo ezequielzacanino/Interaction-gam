@@ -18,6 +18,7 @@ ruta_negative_meta <- "./negative_triplets_metadata.csv"
 alpha_nominal <- 0.10
 z90 <- qnorm(0.95)
 n_cores <- max(1, detectCores() - 1)
+n_bootstrap <- 1000  # Réplicas nulas
 # ---------- FUNCIONES AUXILIARES ----------
 
 fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data) {
@@ -250,7 +251,7 @@ p_null <- ggplot(null_dist_long, aes(x = lower90)) +
        subtitle = "Rojo = umbral p99; Azul = cero (nominal)",
        x = "Lower 90% CI (log-odds)", y = "Frecuencia") +
   theme_minimal(base_size = 10)
-
+print(p_null)
 ggsave("validation_null_distribution.png", p_null, width = 12, height = 8, dpi = 300)
 
 # ---------- ANÁLISIS DE TRIPLETES ----------
@@ -370,7 +371,7 @@ p_ior <- results_dt[!is.na(max_ior)] %>%
   labs(title = "Distribución IOR Máximo", x = "Tipo", y = "IOR Máximo (log)") +
   scale_fill_manual(values = c("positive" = "#4DAF4A", "negative" = "#E41A1C")) +
   theme_minimal() + theme(legend.position = "none")
-
+p_ior
 ggsave("validation_ior_distribution.png", p_ior, width = 8, height = 6, dpi = 300)
 
 # Tasa por tamaño
@@ -382,7 +383,7 @@ p_size <- ggplot(perf_by_size, aes(x = sample_size_cat, y = detection_rate)) +
   labs(title = "Poder de Detección por Tamaño Muestral",
        x = "Reportes", y = "Tasa de Detección") +
   theme_minimal()
-
+p_size
 ggsave("validation_detection_by_sample_size.png", p_size, width = 9, height = 6, dpi = 300)
 
 # Etapas significativas
@@ -393,7 +394,7 @@ p_stages <- results_dt[model_success == TRUE] %>%
        x = "Nº Etapas NICHD", y = "Frecuencia") +
   scale_fill_manual(values = c("positive" = "#4DAF4A", "negative" = "#E41A1C")) +
   scale_x_continuous(breaks = 0:7) + theme_minimal()
-
+p_stages
 ggsave("validation_stages_distribution.png", p_stages, width = 10, height = 6, dpi = 300)
 
 # ---------- TESTS ESTADÍSTICOS ----------
