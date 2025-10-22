@@ -5,9 +5,11 @@ library(parallel)
 library(pROC)
 library(pbapply)
 
+
 # ============================================================================
 # SCRIPT DE VALIDACIÓN
 # ============================================================================
+
 
 # ---------- PARÁMETROS DE CONFIGURACIÓN ----------
 ruta_ade_augmented <- "./ade_augmented.csv"
@@ -15,11 +17,12 @@ ruta_ground_truth <- "./ground_truth.csv"
 ruta_positive_meta <- "./positive_triplets_metadata.csv"
 ruta_negative_meta <- "./negative_triplets_metadata.csv"
 
+
 alpha_nominal <- 0.10
 z90 <- qnorm(0.95)
 n_cores <- max(1, detectCores() - 1)
-n_bootstrap <- 1000  # Réplicas nulas
 # ---------- FUNCIONES AUXILIARES ----------
+
 
 fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data) {
   reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
@@ -59,6 +62,7 @@ fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data) {
   })
 }
 
+
 extract_interaction_coefs <- function(model_result) {
   if (!model_result$success) return(NULL)
   
@@ -80,6 +84,7 @@ extract_interaction_coefs <- function(model_result) {
     upper90 = coef_by_stage + z90 * se_by_stage
   ))
 }
+
 
 calculate_interaction_signal_giangreco <- function(model_result, null_thresholds) {
   if (!model_result$success) {
@@ -154,6 +159,7 @@ calculate_interaction_signal_giangreco <- function(model_result, null_thresholds
   ))
 }
 
+
 analyze_triplet <- function(i, triplet_row, ade_data, null_thresh) {
   drugA <- triplet_row$drugA
   drugB <- triplet_row$drugB
@@ -180,49 +186,114 @@ analyze_triplet <- function(i, triplet_row, ade_data, null_thresh) {
   return(result)
 }
 
+
 # ---------- CARGAR DATOS ----------
+
 
 ade_aug <- fread(ruta_ade_augmented)
 ground_truth <- fread(ruta_ground_truth)
 pos_meta <- fread(ruta_positive_meta)
 neg_meta <- fread(ruta_negative_meta)
 
+
 niveles_nichd <- c("term_neonatal","infancy","toddler","early_childhood",
                    "middle_childhood","early_adolescence","late_adolescence")
 ade_aug[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
 ade_aug[, nichd_num := as.integer(nichd)]
+
 
 message(sprintf("Dataset: %d filas | Ground truth: %d tripletes (%d pos, %d neg)",
                 nrow(ade_aug), nrow(ground_truth),
                 sum(ground_truth$type == "positive"),
                 sum(ground_truth$type == "negative")))
 
+
 # ---------- CONSTRUIR DISTRIBUCIÓN NULA ----------
+message("\n", paste(rep("=", 70), collapse = ""))
+message("CONSTRUCCIÓN DE DISTRIBUCIÓN NULA - BOOTSTRAP DE NEGATIVOS")
+message(paste(rep("=", 70), collapse = ""))
 
-cl_null <- makeCluster(n_cores)
-clusterExport(cl_null, c("fit_differential_gam", "extract_interaction_coefs",
-                         "z90", "niveles_nichd", "ade_aug", "neg_meta"))
-clusterEvalQ(cl_null, { library(data.table); library(mgcv) })
+# Parámetros de bootstrap
+n_bootstrap <- 100  # número de muestras bootstrap
+n_sample_per_boot <- min(50, nrow(neg_meta))  # tamaño de muestra por iteración
 
-null_models_list <- pblapply(seq_len(nrow(neg_meta)), function(i) {
-  row <- neg_meta[i]
-  model_res <- fit_differential_gam(row$drugA, row$drugB, row$meddra, ade_aug)
-  if (!model_res$success) return(NULL)
-  extract_interaction_coefs(model_res)
-}, cl = cl_null)
+message(sprintf("Parámetros: %d iteraciones bootstrap, %d muestras/iter", 
+                n_bootstrap, n_sample_per_boot))
 
-stopCluster(cl_null)
+# Pre-calcular índices de bootstrap (más rápido que samplear en paralelo)
+set.seed(123)
+bootstrap_indices <- replicate(n_bootstrap, 
+                                sample.int(nrow(neg_meta), n_sample_per_boot, replace = TRUE),
+                                simplify = FALSE)
 
-null_models_valid <- Filter(Negate(is.null), null_models_list)
-message(sprintf("Modelos nulos exitosos: %d / %d (%.1f%%)",
-                length(null_models_valid), nrow(neg_meta),
-                100 * length(null_models_valid) / nrow(neg_meta)))
-
-if (length(null_models_valid) < 50) {
-  stop("Insuficientes modelos nulos (mínimo 50)")
+# Función optimizada para extraer solo lower90 (evita objetos grandes)
+extract_lower90_fast <- function(model_result) {
+  if (!model_result$success) return(NULL)
+  
+  modelo <- model_result$model
+  grid_ab <- data.table(nichd_num = 1:7, droga_a = 1, droga_b = 1, droga_ab = 1)
+  grid_00 <- data.table(nichd_num = 1:7, droga_a = 0, droga_b = 0, droga_ab = 0)
+  
+  pred_ab <- predict(modelo, newdata = grid_ab, type = "link", se.fit = TRUE)
+  pred_00 <- predict(modelo, newdata = grid_00, type = "link", se.fit = TRUE)
+  
+  coef_diff <- pred_ab$fit - pred_00$fit
+  se_diff <- sqrt(pred_ab$se.fit^2 + pred_00$se.fit^2)
+  
+  return(coef_diff - z90 * se_diff)  # solo lower90
 }
 
-null_lower90_matrix <- do.call(rbind, lapply(null_models_valid, function(x) x$lower90))
+# Configurar cluster con variables mínimas
+cl_null <- makeCluster(n_cores)
+clusterExport(cl_null, c("fit_differential_gam", "extract_lower90_fast",
+                         "z90", "ade_aug", "neg_meta", "bootstrap_indices",
+                         "n_sample_per_boot"))
+clusterEvalQ(cl_null, { 
+  library(data.table)
+  library(mgcv)
+  setDTthreads(1)  # evitar sobre-suscripción
+})
+
+# Bootstrap paralelo con memoria eficiente
+message("Ejecutando bootstrap paralelo...")
+pb <- txtProgressBar(max = n_bootstrap, style = 3)
+
+null_lower90_list <- pblapply(seq_len(n_bootstrap), function(boot_iter) {
+  
+  # Obtener índices para esta iteración
+  idx_sample <- bootstrap_indices[[boot_iter]]
+  
+  # Procesar muestra bootstrap
+  boot_results <- lapply(idx_sample, function(i) {
+    row <- neg_meta[i]
+    model_res <- fit_differential_gam(row$drugA, row$drugB, row$meddra, ade_aug)
+    extract_lower90_fast(model_res)
+  })
+  
+  # Retornar solo vectores válidos (7 elementos cada uno)
+  valid_results <- Filter(Negate(is.null), boot_results)
+  
+  if (length(valid_results) == 0) return(NULL)
+  
+  # Combinar en matriz (más eficiente que rbind repetido)
+  do.call(rbind, valid_results)
+  
+}, cl = cl_null)
+
+close(pb)
+stopCluster(cl_null)
+
+# Consolidar resultados
+null_lower90_list <- Filter(Negate(is.null), null_lower90_list)
+message(sprintf("\nIteraciones exitosas: %d / %d (%.1f%%)",
+                length(null_lower90_list), n_bootstrap,
+                100 * length(null_lower90_list) / n_bootstrap))
+
+# Combinar todas las matrices
+null_lower90_matrix <- do.call(rbind, null_lower90_list)
+message(sprintf("Distribución nula: %d observaciones × 7 etapas", nrow(null_lower90_matrix)))
+
+# Calcular umbrales (percentil 99 por etapa)
 null_thresholds_by_stage <- apply(null_lower90_matrix, 2, function(col) {
   quantile(col, probs = 0.99, na.rm = TRUE)
 })
@@ -230,29 +301,47 @@ null_thresholds_by_stage <- apply(null_lower90_matrix, 2, function(col) {
 null_thresholds_dt <- data.table(
   stage = 1:7,
   stage_name = niveles_nichd,
-  threshold_p99 = null_thresholds_by_stage
+  threshold_p99 = null_thresholds_by_stage,
+  n_samples = colSums(!is.na(null_lower90_matrix))
 )
 
-message("\nUmbrales de significancia (percentil 99 de lower90):")
+message("\nUmbrales de significancia (percentil 99 de lower90 CI):")
 print(null_thresholds_dt)
 
 # Visualizar distribución nula
-null_dist_long <- melt(as.data.table(null_lower90_matrix), 
-                       measure.vars = 1:7, variable.name = "stage", value.name = "lower90")
+null_dist_long <- melt(
+  as.data.table(null_lower90_matrix), 
+  measure.vars = 1:7, 
+  variable.name = "stage", 
+  value.name = "lower90"
+)
 null_dist_long[, stage := as.integer(gsub("V", "", stage))]
 null_dist_long <- merge(null_dist_long, null_thresholds_dt, by = "stage")
 
 p_null <- ggplot(null_dist_long, aes(x = lower90)) +
   geom_histogram(bins = 50, fill = "gray70", alpha = 0.7) +
-  geom_vline(aes(xintercept = threshold_p99), color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(aes(xintercept = threshold_p99), 
+             color = "red", linetype = "dashed", linewidth = 1) +
   geom_vline(xintercept = 0, color = "blue", linetype = "dotted", linewidth = 0.8) +
   facet_wrap(~ stage_name, scales = "free", ncol = 4) +
-  labs(title = "Distribución Nula (Giangreco method)",
-       subtitle = "Rojo = umbral p99; Azul = cero (nominal)",
-       x = "Lower 90% CI (log-odds)", y = "Frecuencia") +
+  labs(
+    title = "Distribución Nula (Bootstrap de Negativos - Método Giangreco)",
+    subtitle = sprintf("Rojo = umbral p99; Azul = cero | %d iteraciones, %d muestras/iter",
+                       length(null_lower90_list), n_sample_per_boot),
+    x = "Lower 90% CI (log-odds)", 
+    y = "Frecuencia"
+  ) +
   theme_minimal(base_size = 10)
+
 print(p_null)
 ggsave("validation_null_distribution.png", p_null, width = 12, height = 8, dpi = 300)
+
+# Guardar distribución nula para análisis posteriores
+fwrite(as.data.table(null_lower90_matrix), "validation_null_distribution_samples.csv")
+message("✓ Distribución nula guardada: validation_null_distribution_samples.csv")
+
+message(paste(rep("=", 70), collapse = ""))
+
 
 # ---------- ANÁLISIS DE TRIPLETES ----------
 cl <- makeCluster(n_cores)
@@ -261,29 +350,36 @@ clusterExport(cl, c("fit_differential_gam", "calculate_interaction_signal_giangr
                     "ground_truth", "null_thresholds_by_stage"))
 clusterEvalQ(cl, { library(data.table); library(mgcv) })
 
+
 results_list <- pblapply(seq_len(nrow(ground_truth)), function(i) {
   analyze_triplet(i, ground_truth[i], ade_aug, null_thresholds_by_stage)
 }, cl = cl)
 
+
 stopCluster(cl)
+
 
 results_dt <- rbindlist(lapply(results_list, function(x) {
   x$ior_values <- NULL; x$ior_li <- NULL; x$ior_ls <- NULL; x$log_ior_lower90 <- NULL
   as.data.table(x)
 }))
 
+
 ior_matrix <- do.call(rbind, lapply(results_list, function(x) x$ior_values[[1]]))
 colnames(ior_matrix) <- paste0("ior_stage_", 1:7)
 results_dt <- cbind(results_dt, ior_matrix)
+
 
 # ---------- MÉTRICAS DE DESEMPEÑO (ESTILO GIANGRECO) ----------
 positivos_res <- results_dt[type == "positive"]
 negativos_res <- results_dt[type == "negative"]
 
+
 tp <- sum(positivos_res$signal_detected, na.rm = TRUE)
 fn <- sum(!positivos_res$signal_detected, na.rm = TRUE)
 fp <- sum(negativos_res$signal_detected, na.rm = TRUE)
 tn <- sum(!negativos_res$signal_detected, na.rm = TRUE)
+
 
 sensitivity <- tp / (tp + fn)
 specificity <- tn / (tn + fp)
@@ -292,12 +388,14 @@ npv <- tn / (tn + fn)
 accuracy <- (tp + tn) / (tp + tn + fp + fn)
 f1_score <- 2 * (ppv * sensitivity) / (ppv + sensitivity)
 
+
 cat(sprintf("
 MATRIZ DE CONFUSIÓN (NULL MODEL):
                  Predicción
                  Señal    Sin Señal
 Verdad Positivo  %4d     %4d
        Negativo  %4d     %4d
+
 
 MÉTRICAS:
   Sensitivity (TPR):  %.3f  [%d/%d positivos detectados]
@@ -314,9 +412,11 @@ ppv, tp, tp+fp,
 npv, accuracy, f1_score
 ))
 
+
 # Curva ROC
 results_for_roc <- results_dt[!is.na(max_ior)]
 results_for_roc[, true_label := as.integer(type == "positive")]
+
 
 if (nrow(results_for_roc) > 10 && length(unique(results_for_roc$true_label)) == 2) {
   roc_obj <- roc(response = results_for_roc$true_label,
@@ -340,14 +440,17 @@ if (nrow(results_for_roc) > 10 && length(unique(results_for_roc$true_label)) == 
   auc_value <- NA
 }
 
+
 # Merge con metadata
 results_dt <- merge(results_dt, 
                     pos_meta[, .(drugA, drugB, meddra, N, n_injected = injected)],
                     by = c("drugA", "drugB", "meddra"), all.x = TRUE)
 
+
 results_dt[, sample_size_cat := cut(N, breaks = c(0, 100, 250, 500, Inf),
                                      labels = c("50-100", "100-250", "250-500", ">500"),
                                      include.lowest = TRUE)]
+
 
 perf_by_size <- results_dt[type == "positive", .(
   n = .N, n_detected = sum(signal_detected, na.rm = TRUE),
@@ -355,8 +458,10 @@ perf_by_size <- results_dt[type == "positive", .(
   mean_max_ior = mean(max_ior, na.rm = TRUE)
 ), by = sample_size_cat]
 
+
 cat("DESEMPEÑO POR TAMAÑO MUESTRAL:\n")
 print(perf_by_size)
+
 
 # ---------- VISUALIZACIONES ----------
 # Distribución IOR
@@ -374,6 +479,7 @@ p_ior <- results_dt[!is.na(max_ior)] %>%
 p_ior
 ggsave("validation_ior_distribution.png", p_ior, width = 8, height = 6, dpi = 300)
 
+
 # Tasa por tamaño
 p_size <- ggplot(perf_by_size, aes(x = sample_size_cat, y = detection_rate)) +
   geom_col(fill = "steelblue", alpha = 0.8) +
@@ -386,6 +492,7 @@ p_size <- ggplot(perf_by_size, aes(x = sample_size_cat, y = detection_rate)) +
 p_size
 ggsave("validation_detection_by_sample_size.png", p_size, width = 9, height = 6, dpi = 300)
 
+
 # Etapas significativas
 p_stages <- results_dt[model_success == TRUE] %>%
   ggplot(aes(x = n_stages_significant, fill = type)) +
@@ -396,6 +503,7 @@ p_stages <- results_dt[model_success == TRUE] %>%
   scale_x_continuous(breaks = 0:7) + theme_minimal()
 p_stages
 ggsave("validation_stages_distribution.png", p_stages, width = 10, height = 6, dpi = 300)
+
 
 # ---------- TESTS ESTADÍSTICOS ----------
 if (sum(!is.na(positivos_res$max_ior)) > 5 && sum(!is.na(negativos_res$max_ior)) > 5) {
@@ -408,9 +516,11 @@ if (sum(!is.na(positivos_res$max_ior)) > 5 && sum(!is.na(negativos_res$max_ior))
               median(negativos_res$max_ior, na.rm = TRUE)))
 }
 
+
 # ---------- GUARDAR RESULTADOS ----------
 fwrite(results_dt, "validation_detailed_results.csv")
 fwrite(null_thresholds_dt, "validation_null_thresholds.csv")
+
 
 summary_metrics <- data.table(
   metric = c("Sensitivity", "Specificity", "PPV", "NPV", "Accuracy", "F1", "AUC"),
@@ -419,21 +529,26 @@ summary_metrics <- data.table(
 fwrite(summary_metrics, "validation_summary_metrics.csv")
 fwrite(perf_by_size, "validation_performance_by_sample_size.csv")
 
+
 ior_export <- results_dt[, c("triplet_id", "drugA", "drugB", "meddra", 
                               "type", "signal_detected", "n_stages_significant",
                               paste0("ior_stage_", 1:7)), with = FALSE]
 fwrite(ior_export, "validation_ior_values_by_stage.csv")
 
+
 save.image("validation_workspace.RData")
+
 
 message("\n✓ VALIDACIÓN COMPLETADA")
 message(sprintf("  Sensitivity: %.3f | PPV: %.3f | AUC: %.3f", 
                 sensitivity, ppv, auc_value))
 
+
 # ---------- ANÁLISIS ADICIONAL: COMPARACIÓN DE DINÁMICAS ----------
 message("\n", paste(rep("=", 70), collapse = ""))
 message("ANÁLISIS EXPLORATORIO: SEÑAL POR TIPO DE DINÁMICA")
 message(paste(rep("=", 70), collapse = ""))
+
 
 # Merge con metadata de dinámicas
 results_with_dynamic <- merge(
@@ -442,6 +557,7 @@ results_with_dynamic <- merge(
   by = c("drugA", "drugB", "meddra"),
   all.x = TRUE
 )
+
 
 # Performance por dinámica verdadera (solo positivos)
 perf_by_dynamic <- results_with_dynamic[type == "positive" & !is.na(dynamic), .(
@@ -453,12 +569,15 @@ perf_by_dynamic <- results_with_dynamic[type == "positive" & !is.na(dynamic), .(
   median_max_ior = median(max_ior, na.rm = TRUE)
 ), by = dynamic]
 
+
 cat("\nDesempeño por Tipo de Dinámica Inyectada:\n")
 cat("(Solo para interpretación exploratoria - no es objetivo primario)\n\n")
 print(perf_by_dynamic[order(-detection_rate)])
 
+
 fwrite(perf_by_dynamic, "validation_performance_by_dynamic.csv")
 message("\n✓ Performance por dinámica: validation_performance_by_dynamic.csv")
+
 
 # Gráfico exploratorio
 p6 <- ggplot(perf_by_dynamic, 
@@ -475,6 +594,7 @@ p6 <- ggplot(perf_by_dynamic,
   ) +
   theme_minimal(base_size = 12) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 print(p6)
 ggsave("validation_detection_by_dynamic_exploratory.png", p6, 
