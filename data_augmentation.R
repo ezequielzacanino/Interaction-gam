@@ -12,7 +12,7 @@ dinamicas <- c("uniform","increase","decrease","plateau","inverse_plateau")
 efecto_base <- 0.3
 # ------------------------------------------------------------
 
-# ---------- FUNCIONES AUXILIARES (CORREGIDAS) ----------
+# ---------- FUNCIONES AUXILIARES  ----------
 
 dynamic_fun <- function(type, stages) {
   type <- as.character(type)
@@ -451,7 +451,7 @@ message("  ✓ Dataset aumentado: ade_augmented.csv")
 fwrite(pos_metadata, "positive_triplets_metadata.csv")
 message("  ✓ Metadata positivos: positive_triplets_metadata.csv")
 
-fwrite(negativos_sel, "negative_triplets_metadata.csv")
+fwrite(negativos_sel, "negative_triplets_metadata.csv") # después sacar la palabra "triplets" porque ya no son triplets
 message("  ✓ Metadata negativos: negative_triplets_metadata.csv")
 
 ground_truth_positive <- rbind(

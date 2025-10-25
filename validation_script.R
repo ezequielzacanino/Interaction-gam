@@ -13,16 +13,32 @@ library(pbapply)
 
 # ---------- PARÁMETROS DE CONFIGURACIÓN ----------
 ruta_ade_augmented <- "./ade_augmented.csv"
-ruta_ground_truth <- "./ground_truth.csv"
-ruta_positive_meta <- "./positive_triplets_metadata.csv"
-ruta_negative_meta <- "./negative_triplets_metadata.csv"
+ruta_ground_truth <- "./ground_truth_positive.csv"
+ruta_positive_meta <- "./positive_triplets_metadata.csv" 
+ruta_negative_meta <- "./negative_triplets_metadata.csv" #adaptar para cuando le saque la palabra "triplets"
+
+ruta_ground_truth_negative <- "./ground_truth_negative.csv"
+n_replicas <- 500
+k_triplets_sample <- 300
+prioritize_by_count <- TRUE
+seed_base <- 2025
+min_reports_triplet <- 10
+save_null_distribution_file <- "null_distribution_permuted.csv"
+save_null_thresholds_file <- "null_thresholds_pc99.csv"
+save_empirical_pvalues_file <- "empirical_pvalues_groundtruth.csv"
 
 
 alpha_nominal <- 0.10
 z90 <- qnorm(0.95)
 n_cores <- max(1, detectCores() - 1)
-# ---------- FUNCIONES AUXILIARES ----------
 
+# ---------- CARGAR POOL DE REPORTES NEGATIVOS ----------
+ground_truth_negative <- fread(ruta_ground_truth_negative)
+neg_report_ids <- unique(ground_truth_negative$selected_neg_reports)
+
+message("Pool de reportes negativos: ", length(neg_report_ids))
+
+# ---------- FUNCIONES AUXILIARES ----------
 
 fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data) {
   reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
@@ -186,9 +202,47 @@ analyze_triplet <- function(i, triplet_row, ade_data, null_thresh) {
   return(result)
 }
 
+permute_events_within_strata <- function(pool_reports_meta, niveles_nichd, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  pool <- copy(pool_reports_meta)
+  pool[, events_perm := vector("list", .N)]
+  for (stage in niveles_nichd) {
+    idx <- which(pool$nichd == stage)
+    if (length(idx) <= 1) {
+      pool$events_perm[idx] <- pool$events[idx]
+      next
+    }
+    perm_idx <- sample(seq_along(idx), length(idx), replace = FALSE)
+    pool$events_perm[idx] <- pool$events[idx[perm_idx]]
+  }
+  pool[, .(safetyreportid, nichd, events_perm)]
+}
+
+make_triplets_per_report <- function(dr, ev, rid, nichd_stage) {
+  if (length(dr) < 2 || length(ev) < 1) return(NULL)
+  dr <- unique(dr); ev <- unique(ev)
+  if (length(dr) == 2) combs <- matrix(dr, nrow = 1) else combs <- t(combn(dr, 2))
+  n_combs <- nrow(combs); n_events <- length(ev)
+  data.table(
+    safetyreportid = rid,
+    drugA = rep(combs[,1], times = n_events),
+    drugB = rep(combs[,2], times = n_events),
+    meddra = rep(ev, each = n_combs),
+    nichd = nichd_stage
+  )
+}
+
+build_triplets_from_permuted <- function(permuted_pool_dt, reports_meta_full) {
+  tmp <- merge(permuted_pool_dt, reports_meta_full[, .(safetyreportid, drugs)], by = "safetyreportid", all.x = TRUE)
+  trip_list <- vector("list", nrow(tmp))
+  for (i in seq_len(nrow(tmp))) {
+    rowi <- tmp[i]
+    trip_list[[i]] <- make_triplets_per_report(rowi$drugs[[1]], rowi$events_perm[[1]], rowi$safetyreportid, rowi$nichd)
+  }
+  rbindlist(Filter(Negate(is.null), trip_list), use.names = TRUE)
+}
 
 # ---------- CARGAR DATOS ----------
-
 
 ade_aug <- fread(ruta_ade_augmented)
 ground_truth <- fread(ruta_ground_truth)
@@ -205,143 +259,133 @@ ade_aug[, nichd_num := as.integer(nichd)]
 message(sprintf("Dataset: %d filas | Ground truth: %d tripletes (%d pos, %d neg)",
                 nrow(ade_aug), nrow(ground_truth),
                 sum(ground_truth$type == "positive"),
-                sum(ground_truth$type == "negative")))
+                sum(ground_truth_negative$type == "negative")))
 
+# ---------- CONSTRUIR LISTAS DE DROGAS Y EVENTOS POR REPORTE ----------
 
-# ---------- CONSTRUIR DISTRIBUCIÓN NULA ----------
-message("\n", paste(rep("=", 70), collapse = ""))
-message("CONSTRUCCIÓN DE DISTRIBUCIÓN NULA - BOOTSTRAP DE NEGATIVOS")
-message(paste(rep("=", 70), collapse = ""))
+drugs_by_report <- unique(ade_aug[!is.na(atc_concept_id), .(safetyreportid, atc_concept_id)])
+events_by_report <- unique(ade_aug[!is.na(meddra_concept_id), .(safetyreportid, meddra_concept_id)])
+drugs_list <- drugs_by_report[, .(drugs = list(unique(atc_concept_id))), by = safetyreportid]
+events_list <- events_by_report[, .(events = list(unique(meddra_concept_id))), by = safetyreportid]
 
-# Parámetros de bootstrap
-n_bootstrap <- 100  # número de muestras bootstrap
-n_sample_per_boot <- min(50, nrow(neg_meta))  # tamaño de muestra por iteración
+reports_meta <- unique(ade_aug[, .(safetyreportid, nichd)])
+reports_meta <- merge(reports_meta, drugs_list, by = "safetyreportid", all.x = TRUE)
+reports_meta <- merge(reports_meta, events_list, by = "safetyreportid", all.x = TRUE)
+reports_meta[is.na(drugs), drugs := list(integer(0))]
+reports_meta[is.na(events), events := list(integer(0))]
 
-message(sprintf("Parámetros: %d iteraciones bootstrap, %d muestras/iter", 
-                n_bootstrap, n_sample_per_boot))
+pool_reports_meta <- reports_meta[safetyreportid %in% neg_report_ids]
 
-# Pre-calcular índices de bootstrap (más rápido que samplear en paralelo)
-set.seed(123)
-bootstrap_indices <- replicate(n_bootstrap, 
-                                sample.int(nrow(neg_meta), n_sample_per_boot, replace = TRUE),
-                                simplify = FALSE)
+# ---------- PARALELIZACIÓN POR RÉPLICA ----------
+cl <- makeCluster(n_cores)
+clusterExport(cl, c("pool_reports_meta", "reports_meta", "niveles_nichd",
+                    "min_reports_triplet", "fit_differential_gam",
+                    "calculate_interaction_signal_giangreco",
+                    "permute_events_within_strata", "make_triplets_per_report",
+                    "build_triplets_from_permuted", "prioritize_by_count",
+                    "k_triplets_sample", "ade_aug", "z90"),
+              envir = environment())
+clusterEvalQ(cl, { library(data.table); library(mgcv) })
 
-# Función optimizada para extraer solo lower90 (evita objetos grandes)
-extract_lower90_fast <- function(model_result) {
-  if (!model_result$success) return(NULL)
+message(sprintf("Ejecutando %d réplicas permutadas en %d núcleos...", n_replicas, n_cores))
+
+replica_results <- pblapply(seq_len(n_replicas), function(rep) {
+  set.seed(2025 + rep)
   
-  modelo <- model_result$model
-  grid_ab <- data.table(nichd_num = 1:7, droga_a = 1, droga_b = 1, droga_ab = 1)
-  grid_00 <- data.table(nichd_num = 1:7, droga_a = 0, droga_b = 0, droga_ab = 0)
+  # 1. Permutar eventos dentro de cada nichd
+  permuted_pool <- permute_events_within_strata(pool_reports_meta, niveles_nichd)
   
-  pred_ab <- predict(modelo, newdata = grid_ab, type = "link", se.fit = TRUE)
-  pred_00 <- predict(modelo, newdata = grid_00, type = "link", se.fit = TRUE)
+  # 2. Construir tripletes
+  triplets_perm <- build_triplets_from_permuted(permuted_pool, reports_meta)
+  if (nrow(triplets_perm) == 0) return(NULL)
   
-  coef_diff <- pred_ab$fit - pred_00$fit
-  se_diff <- sqrt(pred_ab$se.fit^2 + pred_00$se.fit^2)
+  # 3. Contar y filtrar
+  trip_counts_rep <- unique(triplets_perm[, .(drugA, drugB, meddra, safetyreportid)])[ , .N, by = .(drugA, drugB, meddra)]
+  trip_counts_rep <- trip_counts_rep[N >= min_reports_triplet]
+  if (nrow(trip_counts_rep) == 0) return(NULL)
   
-  return(coef_diff - z90 * se_diff)  # solo lower90
-}
+  # 4. Submuestreo
+  if (prioritize_by_count) {
+    sel_k <- head(trip_counts_rep[order(-N)], k_triplets_sample)
+  } else {
+    sel_k <- trip_counts_rep[sample(.N, min(.N, k_triplets_sample))]
+  }
+  
+  # 5. Ajuste GAM por triplete (paralelo dentro de réplica)
+  trip_results <- lapply(seq_len(nrow(sel_k)), function(ti) {
+    rowt <- sel_k[ti]
+    model_res <- fit_differential_gam(rowt$drugA, rowt$drugB, rowt$meddra, ade_aug)
+    if (!model_res$success) return(NULL)
+    sig_res <- calculate_interaction_signal_giangreco(model_res, null_thresholds = rep(-Inf,7))
+    if (!sig_res$success) return(NULL)
+    data.table(
+      drugA = rowt$drugA, drugB = rowt$drugB, meddra = rowt$meddra,
+      stage = 1:7, log_lower90 = sig_res$log_ior_lower90
+    )
+  })  
+  
+  valid <- rbindlist(Filter(Negate(is.null), trip_results), fill = TRUE)
+  if (nrow(valid) == 0) return(NULL)
+  valid[, replica := rep]
+  valid
+}, cl = cl)
 
-# Configurar cluster con variables mínimas
-cl_null <- makeCluster(n_cores)
-clusterExport(cl_null, c("fit_differential_gam", "extract_lower90_fast",
-                         "z90", "ade_aug", "neg_meta", "bootstrap_indices",
-                         "n_sample_per_boot"))
-clusterEvalQ(cl_null, { 
-  library(data.table)
-  library(mgcv)
-  setDTthreads(1)  # evitar sobre-suscripción
+stopCluster(cl)
+
+# ---------- CONSOLIDAR DISTRIBUCIÓN NULA ----------
+null_all <- rbindlist(Filter(Negate(is.null), replica_results), fill = TRUE)
+fwrite(null_all, save_null_distribution_file)
+message("✓ Distribución nula guardada en ", save_null_distribution_file)
+
+null_thresholds <- null_all[, .(threshold_p99 = quantile(log_lower90, 0.99, na.rm = TRUE)), by = stage]
+fwrite(null_thresholds, save_null_thresholds_file)
+message("✓ Umbrales Pc99 guardados en ", save_null_thresholds_file)
+
+print(null_thresholds)
+
+# ---------- CARGAR PARA NO VOLVER A CORRER ----------
+
+# cargar null_all para no volver a ajustar toda la distribución nula
+null_all <- fread("null_distribution_permuted.csv")
+null_thresholds <- fread("null_thresholds_pc99.csv")
+
+# ---------- CALCULAR P-VALORES EMPÍRICOS PARA GROUND TRUTH OBSERVADO ----------
+#
+# ESTO HACE LO MISMO QUE LA SECCIÓN ANÁLISIS DE TRIPLETES
+#
+
+message("\nCalculando p-valores empíricos para ground_truth...")
+
+# Ajustar modelo real si no lo tenés ya ajustado
+observed_results <- pblapply(seq_len(nrow(ground_truth)), function(i) {
+  rowt <- ground_truth[i]
+  model_res <- fit_differential_gam(rowt$drugA, rowt$drugB, rowt$meddra, ade_aug)
+  if (!model_res$success) return(NULL)
+  sig_res <- calculate_interaction_signal_giangreco(model_res, null_thresholds = rep(-Inf,7))
+  if (!sig_res$success) return(NULL)
+  data.table(
+    triplet_id = i,
+    drugA = rowt$drugA, drugB = rowt$drugB, meddra = rowt$meddra, type = rowt$type,
+    stage = 1:7, log_lower90_obs = sig_res$log_ior_lower90
+  )
 })
 
-# Bootstrap paralelo con memoria eficiente
-message("Ejecutando bootstrap paralelo...")
-pb <- txtProgressBar(max = n_bootstrap, style = 3)
+observed_dt <- rbindlist(Filter(Negate(is.null), observed_results), fill = TRUE)
 
-null_lower90_list <- pblapply(seq_len(n_bootstrap), function(boot_iter) {
-  
-  # Obtener índices para esta iteración
-  idx_sample <- bootstrap_indices[[boot_iter]]
-  
-  # Procesar muestra bootstrap
-  boot_results <- lapply(idx_sample, function(i) {
-    row <- neg_meta[i]
-    model_res <- fit_differential_gam(row$drugA, row$drugB, row$meddra, ade_aug)
-    extract_lower90_fast(model_res)
-  })
-  
-  # Retornar solo vectores válidos (7 elementos cada uno)
-  valid_results <- Filter(Negate(is.null), boot_results)
-  
-  if (length(valid_results) == 0) return(NULL)
-  
-  # Combinar en matriz (más eficiente que rbind repetido)
-  do.call(rbind, valid_results)
-  
-}, cl = cl_null)
+# Empirical p = mean(null >= observed)
+pval_dt <- merge(observed_dt, null_all[, .(log_lower90_null = log_lower90), by = stage], by = "stage", allow.cartesian = TRUE)
+pval_dt[, p_emp := mean(log_lower90_null >= log_lower90_obs, na.rm = TRUE), by = .(triplet_id, stage)]
+pval_final <- unique(pval_dt[, .(triplet_id, drugA, drugB, meddra, type, stage, log_lower90_obs, p_emp)])
 
-close(pb)
-stopCluster(cl_null)
+# Guardar p-values y marcar significancia (Pc99)
+pval_final <- merge(pval_final, null_thresholds, by = "stage", all.x = TRUE)
+pval_final[, significant_pc99 := log_lower90_obs > threshold_p99]
+fwrite(pval_final, save_empirical_pvalues_file)
+message("✓ P-valores empíricos guardados en ", save_empirical_pvalues_file)
 
-# Consolidar resultados
-null_lower90_list <- Filter(Negate(is.null), null_lower90_list)
-message(sprintf("\nIteraciones exitosas: %d / %d (%.1f%%)",
-                length(null_lower90_list), n_bootstrap,
-                100 * length(null_lower90_list) / n_bootstrap))
-
-# Combinar todas las matrices
-null_lower90_matrix <- do.call(rbind, null_lower90_list)
-message(sprintf("Distribución nula: %d observaciones × 7 etapas", nrow(null_lower90_matrix)))
-
-# Calcular umbrales (percentil 99 por etapa)
-null_thresholds_by_stage <- apply(null_lower90_matrix, 2, function(col) {
-  quantile(col, probs = 0.99, na.rm = TRUE)
-})
-
-null_thresholds_dt <- data.table(
-  stage = 1:7,
-  stage_name = niveles_nichd,
-  threshold_p99 = null_thresholds_by_stage,
-  n_samples = colSums(!is.na(null_lower90_matrix))
-)
-
-message("\nUmbrales de significancia (percentil 99 de lower90 CI):")
-print(null_thresholds_dt)
-
-# Visualizar distribución nula
-null_dist_long <- melt(
-  as.data.table(null_lower90_matrix), 
-  measure.vars = 1:7, 
-  variable.name = "stage", 
-  value.name = "lower90"
-)
-null_dist_long[, stage := as.integer(gsub("V", "", stage))]
-null_dist_long <- merge(null_dist_long, null_thresholds_dt, by = "stage")
-
-p_null <- ggplot(null_dist_long, aes(x = lower90)) +
-  geom_histogram(bins = 50, fill = "gray70", alpha = 0.7) +
-  geom_vline(aes(xintercept = threshold_p99), 
-             color = "red", linetype = "dashed", linewidth = 1) +
-  geom_vline(xintercept = 0, color = "blue", linetype = "dotted", linewidth = 0.8) +
-  facet_wrap(~ stage_name, scales = "free", ncol = 4) +
-  labs(
-    title = "Distribución Nula (Bootstrap de Negativos - Método Giangreco)",
-    subtitle = sprintf("Rojo = umbral p99; Azul = cero | %d iteraciones, %d muestras/iter",
-                       length(null_lower90_list), n_sample_per_boot),
-    x = "Lower 90% CI (log-odds)", 
-    y = "Frecuencia"
-  ) +
-  theme_minimal(base_size = 10)
-
-print(p_null)
-ggsave("validation_null_distribution.png", p_null, width = 12, height = 8, dpi = 300)
-
-# Guardar distribución nula para análisis posteriores
-fwrite(as.data.table(null_lower90_matrix), "validation_null_distribution_samples.csv")
-message("✓ Distribución nula guardada: validation_null_distribution_samples.csv")
-
-message(paste(rep("=", 70), collapse = ""))
-
+# Resumen global
+message("\nResumen de etapas significativas (Pc99):")
+print(pval_final[, .(n_sig = sum(significant_pc99)), by = type])
 
 # ---------- ANÁLISIS DE TRIPLETES ----------
 cl <- makeCluster(n_cores)
