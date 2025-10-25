@@ -5,7 +5,7 @@ set.seed(42)
 # ---------- Parámetros (ajusta según necesites) ----------
 ruta_ade_raw <- "./ade_raw.csv"
 min_reports_triplet <- 10
-n_pos <- 500
+n_pos <- 1000
 n_neg <- 10000
 lambda_fc <- 0.75
 dinamicas <- c("uniform","increase","decrease","plateau","inverse_plateau")
@@ -221,9 +221,9 @@ trip_counts <- unique(triplets_dt[, .(drugA, drugB, meddra, safetyreportid)])[
 ]
 
 # Filtrar candidatos
-candidatos <- trip_counts[N >= min_reports_triplet]
+candidatos_pos <- trip_counts[N >= min_reports_triplet]
 message("Tripletes candidatos (>= ", min_reports_triplet, " reportes): ", 
-        nrow(candidatos))
+        nrow(candidatos_pos))
 
 # ------------------------------------------------------------
 # 3) SELECCIONAR POSITIVOS
@@ -242,66 +242,46 @@ positivos_sel[, type := "positivo"]
 message("Seleccionados: ", n_pos, " positivos, ")
 
 # ------------------------------------------------------------
-# 3) SELECCIONAR NEGATIVOS
+# 4) SELECCIONAR NEGATIVOS
 # ------------------------------------------------------------
+message("\nSeleccionando ", n_neg, " reportes NEGATIVOS aleatorios...")
 
-all_drugs <- unique(c(ade_raw_dt$atc_concept_id))
-all_drugs <- all_drgus[!is.na(all_drugs)]
+# Identificar drogas y eventos en positivos (para excluir)
+drugs_in_pos <- unique(c(positivos_sel$drugA, positivos_sel$drugB))
+events_in_pos <- unique(positivos_sel$meddra)
 
-all_events <- unique(ade_raw_dt$meddra_concept_id)
-all_events <- all_events[!is.na(all_events)]
+message("Excluyendo: ", length(drugs_in_pos), " drogas y ", 
+        length(events_in_pos), " eventos de positivos")
 
-# Generar negativos verificando que NO estén en positivos
+# Identificar reportes que NO contienen ninguna droga o evento de positivos
+reports_with_pos_drugs <- unique(ade_raw_dt[atc_concept_id %in% drugs_in_pos, safetyreportid])
+reports_with_pos_events <- unique(ade_raw_dt[meddra_concept_id %in% events_in_pos, safetyreportid])
+reports_to_exclude <- unique(c(reports_with_pos_drugs, reports_with_pos_events))
+
+# Reportes candidatos para negativos
+all_reports <- unique(ade_raw_dt$safetyreportid)
+candidate_reports <- setdiff(all_reports, reports_to_exclude)
+
+message("Reportes disponibles como negativos: ", length(candidate_reports), 
+        " / ", length(all_reports))
+
+if (length(candidate_reports) < n_neg) {
+  warning("Solo hay ", length(candidate_reports), " reportes elegibles, pero se pidieron ", n_neg)
+  n_neg <- length(candidate_reports)
+}
+
+# Samplear reportes negativos
 set.seed(456)
-negativos_list <- vector("list", n_neg)
-n_generated <- 0
-max_attempts <- n_neg * 100  # límite de intentos
+selected_neg_reports <- sample(candidate_reports, n_neg, replace = FALSE)
 
-pb_neg <- txtProgressBar(max = n_neg, style = 3)
+# Crear tabla de reportes negativos (sin agrupar en tripletes)
+negativos_sel <- data.table(
+  safetyreportid = selected_neg_reports,
+  type = "negativo"
+)
 
-attempt <- 0
-while (n_generated < n_neg && attempt < max_attempts) {
-  attempt <- attempt + 1
-  
-  # Samplear 2 drogas diferentes
-  sampled_drugs <- sample(all_drugs, 2, replace = FALSE)
-  dA <- min(sampled_drugs)
-  dB <- max(sampled_drugs)
-  
-  # Samplear 1 evento
-  ev <- sample(all_events, 1)
-  
-  # Verificar que no esté ya en positivos seleccionados
-  if (nrow(positivos_sel[drugA == dA & drugB == dB & meddra == ev]) == 0) {
-    n_generated <- n_generated + 1
-    
-    # Contar reportes reales si existen
-    n_reports <- nrow(triplets_dt[drugA == dA & drugB == dB & meddra == ev, 
-                                   .(safetyreportid), keyby = safetyreportid])
-    
-    negativos_list[[n_generated]] <- data.table(
-      drugA = dA, 
-      drugB = dB, 
-      meddra = ev,
-      N = n_reports
-    )
-    setTxtProgressBar(pb_neg, n_generated)
-  }
-}
-close(pb_neg)
-
-if (n_generated < n_neg) {
-  warning("Solo se generaron ", n_generated, " negativos de ", n_neg, " solicitados")
-  negativos_list <- negativos_list[1:n_generated]
-}
-
-negativos_sel <- rbindlist(negativos_list)
-negativos_sel[, type := "negativo"]
-
-message("\nSeleccionados: ", nrow(negativos_sel), " negativos aleatorios")
-message("  - Con reportes observados: ", sum(negativos_sel$N > 0))
-message("  - Sin reportes observados: ", sum(negativos_sel$N == 0))
-message("Verificación: ningún negativo está en positivos seleccionados")
+message("\nSeleccionados: ", nrow(negativos_sel), " reportes negativos")
+message("  - Sin overlap de drogas/eventos con positivos")
 
 # ------------------------------------------------------------
 # 4) CREAR COPIA AUMENTADA
@@ -395,7 +375,7 @@ inject_dynamic_triplet <- function(drugA_id, drugB_id, event_id,
 # ------------------------------------------------------------
 # 6) APLICAR INYECCIÓN
 # ------------------------------------------------------------
-set.seed(202)
+set.seed(9427)
 din_for_triplets <- sample(dinamicas, n_pos, replace = TRUE)
 
 pos_meta <- positivos_sel[, .(drugA, drugB, meddra, N)]
@@ -446,7 +426,6 @@ message("  - Total eventos inyectados: ", sum(injected_counts))
 message("  - Promedio por triplete exitoso: ", 
         round(mean(injected_counts[injected_counts > 0]), 1))
 
-# Crear metadata de positivos
 pos_metadata <- cbind(pos_meta, injected = injected_counts)
 pos_metadata[, success := injected > 0]
 
@@ -458,33 +437,35 @@ print(pos_metadata[, .(
   promedio = round(mean(injected), 1)
 ), by = dynamic])
 
+message("\nNegativos: ", nrow(negativos_sel), " tripletes de reportes independientes")
+message("  (Reportes sin overlap de drogas/eventos con positivos)")
+
 # ------------------------------------------------------------
-# 8) GUARDAR RESULTADOS
+# 9) GUARDAR RESULTADOS
 # ------------------------------------------------------------
 message("\nGuardando resultados...")
 
-# Dataset aumentado
 fwrite(ade_aug, "ade_augmented.csv")
 message("  ✓ Dataset aumentado: ade_augmented.csv")
 
-# Metadata de positivos
 fwrite(pos_metadata, "positive_triplets_metadata.csv")
 message("  ✓ Metadata positivos: positive_triplets_metadata.csv")
 
-# Negativos (para referencia)
 fwrite(negativos_sel, "negative_triplets_metadata.csv")
 message("  ✓ Metadata negativos: negative_triplets_metadata.csv")
 
-# Ground truth combinado
-ground_truth <- rbind(
+ground_truth_positive <- rbind(
   pos_metadata[, .(drugA, drugB, meddra, type = "positive", 
-                   dynamic, n_injected = injected)],
-  negativos_sel[, .(drugA, drugB, meddra, type = "negative", 
+                   dynamic, n_injected = injected)])
+
+ground_truth_negative <- rbind(
+    negativos_sel[, .(selected_neg_reports, type = "negative", 
                     dynamic = NA_character_, n_injected = 0L)]
 )
-fwrite(ground_truth, "ground_truth.csv")
-message("  ✓ Ground truth: ground_truth.csv")
+
+fwrite(ground_truth_positive, "ground_truth_positive.csv")
+
+fwrite(ground_truth_negative, "ground_truth_negative.csv")
 
 message("\n✓ Augmentation completado exitosamente!")
 message(paste(rep("=", 60), collapse = ""))
-
