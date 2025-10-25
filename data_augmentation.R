@@ -226,23 +226,82 @@ message("Tripletes candidatos (>= ", min_reports_triplet, " reportes): ",
         nrow(candidatos))
 
 # ------------------------------------------------------------
-# 3) SELECCIONAR POSITIVOS Y NEGATIVOS
+# 3) SELECCIONAR POSITIVOS
 # ------------------------------------------------------------
-if (nrow(candidatos) < (n_pos + n_neg)) {
-  stop("Insuficientes candidatos. Disponibles: ", nrow(candidatos), 
+if (nrow(candidatos) < n_pos) {
+  stop("Insuficientes candidatos positivos. Disponibles: ", nrow(candidatos), 
        ", requeridos: ", n_pos + n_neg)
 }
 
 set.seed(123)
-candidatos <- candidatos[sample(.N)]
+candidatos_pos <- candidatos_pos[sample(.N)]
 
 positivos_sel <- candidatos[1:n_pos, .(drugA, drugB, meddra, N)]
-negativos_sel <- candidatos[(n_pos+1):(n_pos+n_neg), .(drugA, drugB, meddra, N)]
-
 positivos_sel[, type := "positivo"]
+
+message("Seleccionados: ", n_pos, " positivos, ")
+
+# ------------------------------------------------------------
+# 3) SELECCIONAR NEGATIVOS
+# ------------------------------------------------------------
+
+all_drugs <- unique(c(ade_raw_dt$atc_concept_id))
+all_drugs <- all_drgus[!is.na(all_drugs)]
+
+all_events <- unique(ade_raw_dt$meddra_concept_id)
+all_events <- all_events[!is.na(all_events)]
+
+# Generar negativos verificando que NO estén en positivos
+set.seed(456)
+negativos_list <- vector("list", n_neg)
+n_generated <- 0
+max_attempts <- n_neg * 100  # límite de intentos
+
+pb_neg <- txtProgressBar(max = n_neg, style = 3)
+
+attempt <- 0
+while (n_generated < n_neg && attempt < max_attempts) {
+  attempt <- attempt + 1
+  
+  # Samplear 2 drogas diferentes
+  sampled_drugs <- sample(all_drugs, 2, replace = FALSE)
+  dA <- min(sampled_drugs)
+  dB <- max(sampled_drugs)
+  
+  # Samplear 1 evento
+  ev <- sample(all_events, 1)
+  
+  # Verificar que no esté ya en positivos seleccionados
+  if (nrow(positivos_sel[drugA == dA & drugB == dB & meddra == ev]) == 0) {
+    n_generated <- n_generated + 1
+    
+    # Contar reportes reales si existen
+    n_reports <- nrow(triplets_dt[drugA == dA & drugB == dB & meddra == ev, 
+                                   .(safetyreportid), keyby = safetyreportid])
+    
+    negativos_list[[n_generated]] <- data.table(
+      drugA = dA, 
+      drugB = dB, 
+      meddra = ev,
+      N = n_reports
+    )
+    setTxtProgressBar(pb_neg, n_generated)
+  }
+}
+close(pb_neg)
+
+if (n_generated < n_neg) {
+  warning("Solo se generaron ", n_generated, " negativos de ", n_neg, " solicitados")
+  negativos_list <- negativos_list[1:n_generated]
+}
+
+negativos_sel <- rbindlist(negativos_list)
 negativos_sel[, type := "negativo"]
 
-message("Seleccionados: ", n_pos, " positivos, ", n_neg, " negativos")
+message("\nSeleccionados: ", nrow(negativos_sel), " negativos aleatorios")
+message("  - Con reportes observados: ", sum(negativos_sel$N > 0))
+message("  - Sin reportes observados: ", sum(negativos_sel$N == 0))
+message("Verificación: ningún negativo está en positivos seleccionados")
 
 # ------------------------------------------------------------
 # 4) CREAR COPIA AUMENTADA
