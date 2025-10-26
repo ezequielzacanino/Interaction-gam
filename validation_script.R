@@ -388,42 +388,53 @@ message("\nResumen de etapas significativas (Pc99):")
 print(pval_final[, .(n_sig = sum(significant_pc99)), by = type])
 
 # ---------- ANÁLISIS DE TRIPLETES ----------
-cl <- makeCluster(n_cores)
-clusterExport(cl, c("fit_differential_gam", "calculate_interaction_signal_giangreco",
-                    "analyze_triplet", "z90", "niveles_nichd", "ade_aug", 
-                    "ground_truth", "null_thresholds_by_stage"))
-clusterEvalQ(cl, { library(data.table); library(mgcv) })
+# Agregar información por triplete (considerando que pasó umbral Pc99 en al menos 1 etapa)
+triplet_summary <- pval_final[, .(
+  signal_detected = any(significant_pc99, na.rm = TRUE),
+  n_stages_significant = sum(significant_pc99, na.rm = TRUE),
+  min_pval = min(p_emp, na.rm = TRUE),
+  mean_log_lower90 = mean(log_lower90_obs, na.rm = TRUE),
+  max_log_lower90 = max(log_lower90_obs, na.rm = TRUE)
+), by = .(triplet_id, drugA, drugB, meddra, type)]
 
+# Calcular IOR desde log-odds (para comparabilidad con versión anterior)
+ior_by_stage <- dcast(pval_final, triplet_id + drugA + drugB + meddra + type ~ stage, 
+                      value.var = "log_lower90_obs")
+setnames(ior_by_stage, as.character(1:7), paste0("log_ior_stage_", 1:7))
 
-results_list <- pblapply(seq_len(nrow(ground_truth)), function(i) {
-  analyze_triplet(i, ground_truth[i], ade_aug, null_thresholds_by_stage)
-}, cl = cl)
+# Convertir a IOR
+for (i in 1:7) {
+  col_log <- paste0("log_ior_stage_", i)
+  col_ior <- paste0("ior_stage_", i)
+  ior_by_stage[, (col_ior) := exp(get(col_log))]
+}
 
+# Calcular max IOR y mean IOR
+ior_cols <- paste0("ior_stage_", 1:7)
+ior_by_stage[, max_ior := do.call(pmax, c(.SD, na.rm = TRUE)), .SDcols = ior_cols]
+ior_by_stage[, mean_ior := rowMeans(.SD, na.rm = TRUE), .SDcols = ior_cols]
 
-stopCluster(cl)
+# Merge con summary
+results_dt <- merge(triplet_summary, 
+                    ior_by_stage[, c("triplet_id", "max_ior", "mean_ior", ior_cols), with = FALSE],
+                    by = "triplet_id", all.x = TRUE)
 
+# Marcar éxito del modelo (todos los que llegaron aquí pasaron model_success = TRUE)
+results_dt[, model_success := TRUE]
 
-results_dt <- rbindlist(lapply(results_list, function(x) {
-  x$ior_values <- NULL; x$ior_li <- NULL; x$ior_ls <- NULL; x$log_ior_lower90 <- NULL
-  as.data.table(x)
-}))
-
-
-ior_matrix <- do.call(rbind, lapply(results_list, function(x) x$ior_values[[1]]))
-colnames(ior_matrix) <- paste0("ior_stage_", 1:7)
-results_dt <- cbind(results_dt, ior_matrix)
-
+message(sprintf("Tripletes analizados: %d (%d positivos, %d negativos)",
+                nrow(results_dt),
+                sum(results_dt$type == "positive"),
+                sum(results_dt$type == "negative")))
 
 # ---------- MÉTRICAS DE DESEMPEÑO (ESTILO GIANGRECO) ----------
 positivos_res <- results_dt[type == "positive"]
 negativos_res <- results_dt[type == "negative"]
 
-
 tp <- sum(positivos_res$signal_detected, na.rm = TRUE)
 fn <- sum(!positivos_res$signal_detected, na.rm = TRUE)
 fp <- sum(negativos_res$signal_detected, na.rm = TRUE)
 tn <- sum(!negativos_res$signal_detected, na.rm = TRUE)
-
 
 sensitivity <- tp / (tp + fn)
 specificity <- tn / (tn + fp)
@@ -432,14 +443,12 @@ npv <- tn / (tn + fn)
 accuracy <- (tp + tn) / (tp + tn + fp + fn)
 f1_score <- 2 * (ppv * sensitivity) / (ppv + sensitivity)
 
-
 cat(sprintf("
-MATRIZ DE CONFUSIÓN (NULL MODEL):
+MATRIZ DE CONFUSIÓN (MÉTODO PERMUTACIONAL):
                  Predicción
                  Señal    Sin Señal
 Verdad Positivo  %4d     %4d
        Negativo  %4d     %4d
-
 
 MÉTRICAS:
   Sensitivity (TPR):  %.3f  [%d/%d positivos detectados]
@@ -456,11 +465,9 @@ ppv, tp, tp+fp,
 npv, accuracy, f1_score
 ))
 
-
-# Curva ROC
+# ---------- CURVA ROC ----------
 results_for_roc <- results_dt[!is.na(max_ior)]
 results_for_roc[, true_label := as.integer(type == "positive")]
-
 
 if (nrow(results_for_roc) > 10 && length(unique(results_for_roc$true_label)) == 2) {
   roc_obj <- roc(response = results_for_roc$true_label,
@@ -472,43 +479,46 @@ if (nrow(results_for_roc) > 10 && length(unique(results_for_roc$true_label)) == 
   
   p_roc <- ggroc(roc_obj, legacy.axes = TRUE) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
-    annotate("text", x = 0.75, y = 0.25, label = sprintf("AUC = %.3f", auc_value), 
+    annotate("text", x = 0.75, y = 0.25, 
+             label = sprintf("AUC = %.3f", auc_value), 
              size = 5, fontface = "bold") +
-    labs(title = "Curva ROC - Detección de Señales (Giangreco)",
+    labs(title = "Curva ROC - Detección de Señales (Método Permutacional)",
          subtitle = "Score: IOR máximo por triplete",
          x = "1 - Especificidad", y = "Sensibilidad") +
-    theme_minimal()
+    theme_minimal(base_size = 12)
   
-  ggsave("validation_roc_curve.png", p_roc, width = 8, height = 7, dpi = 300)
+  print(p_roc)
+  ggsave("validation_roc_curve_permutation.png", p_roc, width = 8, height = 7, dpi = 300)
 } else {
   auc_value <- NA
+  message("⚠ No se pudo calcular AUC (datos insuficientes)")
 }
 
-
-# Merge con metadata
+# ---------- ANÁLISIS POR TAMAÑO MUESTRAL ----------
+# Merge con metadata de positivos
 results_dt <- merge(results_dt, 
-                    pos_meta[, .(drugA, drugB, meddra, N, n_injected = injected)],
+                    pos_meta[, .(drugA, drugB, meddra, N, n_injected = injected, dynamic)],
                     by = c("drugA", "drugB", "meddra"), all.x = TRUE)
 
-
-results_dt[, sample_size_cat := cut(N, breaks = c(0, 100, 250, 500, Inf),
-                                     labels = c("50-100", "100-250", "250-500", ">500"),
+results_dt[, sample_size_cat := cut(N, 
+                                     breaks = c(0, 100, 250, 500, Inf),
+                                     labels = c("10-100", "100-250", "250-500", ">500"),
                                      include.lowest = TRUE)]
 
-
 perf_by_size <- results_dt[type == "positive", .(
-  n = .N, n_detected = sum(signal_detected, na.rm = TRUE),
+  n = .N, 
+  n_detected = sum(signal_detected, na.rm = TRUE),
   detection_rate = mean(signal_detected, na.rm = TRUE),
-  mean_max_ior = mean(max_ior, na.rm = TRUE)
+  mean_max_ior = mean(max_ior, na.rm = TRUE),
+  median_max_ior = median(max_ior, na.rm = TRUE)
 ), by = sample_size_cat]
 
-
-cat("DESEMPEÑO POR TAMAÑO MUESTRAL:\n")
+cat("\nDESEMPEÑO POR TAMAÑO MUESTRAL:\n")
 print(perf_by_size)
 
-
 # ---------- VISUALIZACIONES ----------
-# Distribución IOR
+
+# 1. Distribución IOR
 p_ior <- results_dt[!is.na(max_ior)] %>%
   ggplot(aes(x = type, y = max_ior, fill = type)) +
   geom_violin(alpha = 0.6, draw_quantiles = c(0.25, 0.5, 0.75)) +
@@ -517,41 +527,66 @@ p_ior <- results_dt[!is.na(max_ior)] %>%
                fill = "white", color = "black") +
   scale_y_log10(breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100)) +
   geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 0.8) +
-  labs(title = "Distribución IOR Máximo", x = "Tipo", y = "IOR Máximo (log)") +
+  labs(title = "Distribución IOR Máximo (Método Permutacional)", 
+       x = "Tipo", y = "IOR Máximo (log)") +
   scale_fill_manual(values = c("positive" = "#4DAF4A", "negative" = "#E41A1C")) +
-  theme_minimal() + theme(legend.position = "none")
-p_ior
-ggsave("validation_ior_distribution.png", p_ior, width = 8, height = 6, dpi = 300)
+  theme_minimal(base_size = 12) + 
+  theme(legend.position = "none")
 
+print(p_ior)
+ggsave("validation_ior_distribution_permutation.png", p_ior, width = 8, height = 6, dpi = 300)
 
-# Tasa por tamaño
+# 2. Tasa de detección por tamaño muestral
 p_size <- ggplot(perf_by_size, aes(x = sample_size_cat, y = detection_rate)) +
   geom_col(fill = "steelblue", alpha = 0.8) +
-  geom_text(aes(label = sprintf("%.1f%%\n(%d/%d)", detection_rate * 100, n_detected, n)),
+  geom_text(aes(label = sprintf("%.1f%%\n(%d/%d)", 
+                                detection_rate * 100, n_detected, n)),
             vjust = -0.5, size = 3.5) +
-  scale_y_continuous(limits = c(0, 1.1), labels = scales::percent) +
+  scale_y_continuous(limits = c(0, 1.15), labels = scales::percent) +
   labs(title = "Poder de Detección por Tamaño Muestral",
-       x = "Reportes", y = "Tasa de Detección") +
-  theme_minimal()
-p_size
-ggsave("validation_detection_by_sample_size.png", p_size, width = 9, height = 6, dpi = 300)
+       subtitle = "Método Permutacional (Pc99)",
+       x = "Número de Reportes", y = "Tasa de Detección") +
+  theme_minimal(base_size = 12)
 
+print(p_size)
+ggsave("validation_detection_by_sample_size_permutation.png", p_size, 
+       width = 9, height = 6, dpi = 300)
 
-# Etapas significativas
+# 3. Etapas significativas
 p_stages <- results_dt[model_success == TRUE] %>%
   ggplot(aes(x = n_stages_significant, fill = type)) +
   geom_bar(position = "dodge", alpha = 0.7) +
-  labs(title = "Etapas con Señal Significativa", 
+  labs(title = "Etapas con Señal Significativa (Pc99)", 
+       subtitle = "Método Permutacional",
        x = "Nº Etapas NICHD", y = "Frecuencia") +
-  scale_fill_manual(values = c("positive" = "#4DAF4A", "negative" = "#E41A1C")) +
-  scale_x_continuous(breaks = 0:7) + theme_minimal()
-p_stages
-ggsave("validation_stages_distribution.png", p_stages, width = 10, height = 6, dpi = 300)
+  scale_fill_manual(values = c("positive" = "#4DAF4A", "negative" = "#E41A1C"),
+                    labels = c("Positivos", "Negativos")) +
+  scale_x_continuous(breaks = 0:7) + 
+  theme_minimal(base_size = 12)
 
+print(p_stages)
+ggsave("validation_stages_distribution_permutation.png", p_stages, 
+       width = 10, height = 6, dpi = 300)
+
+# 4. Distribución de p-valores empíricos
+p_pval <- pval_final %>%
+  ggplot(aes(x = p_emp, fill = type)) +
+  geom_histogram(bins = 50, alpha = 0.7, position = "identity") +
+  geom_vline(xintercept = 0.05, linetype = "dashed", color = "red", linewidth = 0.8) +
+  facet_wrap(~ stage_name, scales = "free_y", ncol = 4) +
+  labs(title = "Distribución de P-valores Empíricos por Etapa",
+       x = "P-valor Empírico", y = "Frecuencia") +
+  scale_fill_manual(values = c("positive" = "#4DAF4A", "negative" = "#E41A1C")) +
+  theme_minimal(base_size = 10)
+
+print(p_pval)
+ggsave("validation_pvalue_distribution_permutation.png", p_pval, 
+       width = 12, height = 8, dpi = 300)
 
 # ---------- TESTS ESTADÍSTICOS ----------
 if (sum(!is.na(positivos_res$max_ior)) > 5 && sum(!is.na(negativos_res$max_ior)) > 5) {
-  test_ior <- wilcox.test(positivos_res$max_ior, negativos_res$max_ior, alternative = "greater")
+  test_ior <- wilcox.test(positivos_res$max_ior, negativos_res$max_ior, 
+                          alternative = "greater")
   
   cat(sprintf("\nMANN-WHITNEY TEST (IOR máximo):\n  W = %.2f, p = %.2e\n",
               test_ior$statistic, test_ior$p.value))
@@ -560,72 +595,67 @@ if (sum(!is.na(positivos_res$max_ior)) > 5 && sum(!is.na(negativos_res$max_ior))
               median(negativos_res$max_ior, na.rm = TRUE)))
 }
 
+# Test de p-valores (deben ser más pequeños en positivos)
+if (sum(!is.na(positivos_res$min_pval)) > 5 && sum(!is.na(negativos_res$min_pval)) > 5) {
+  test_pval <- wilcox.test(positivos_res$min_pval, negativos_res$min_pval, 
+                           alternative = "less")
+  
+  cat(sprintf("\nMANN-WHITNEY TEST (P-valor mínimo):\n  W = %.2f, p = %.2e\n",
+              test_pval$statistic, test_pval$p.value))
+  cat(sprintf("  Medianas: Pos=%.4f, Neg=%.4f\n",
+              median(positivos_res$min_pval, na.rm = TRUE),
+              median(negativos_res$min_pval, na.rm = TRUE)))
+}
 
 # ---------- GUARDAR RESULTADOS ----------
-fwrite(results_dt, "validation_detailed_results.csv")
-fwrite(null_thresholds_dt, "validation_null_thresholds.csv")
-
+fwrite(results_dt, "validation_detailed_results_permutation.csv")
+fwrite(pval_final, "validation_pvalues_by_stage_permutation.csv")
 
 summary_metrics <- data.table(
   metric = c("Sensitivity", "Specificity", "PPV", "NPV", "Accuracy", "F1", "AUC"),
   value = c(sensitivity, specificity, ppv, npv, accuracy, f1_score, auc_value)
 )
-fwrite(summary_metrics, "validation_summary_metrics.csv")
-fwrite(perf_by_size, "validation_performance_by_sample_size.csv")
+fwrite(summary_metrics, "validation_summary_metrics_permutation.csv")
+fwrite(perf_by_size, "validation_performance_by_sample_size_permutation.csv")
 
-
+# Exportar IOR por etapa
 ior_export <- results_dt[, c("triplet_id", "drugA", "drugB", "meddra", 
                               "type", "signal_detected", "n_stages_significant",
-                              paste0("ior_stage_", 1:7)), with = FALSE]
-fwrite(ior_export, "validation_ior_values_by_stage.csv")
+                              ior_cols), with = FALSE]
+fwrite(ior_export, "validation_ior_values_by_stage_permutation.csv")
 
-
-save.image("validation_workspace.RData")
-
-
-message("\n✓ VALIDACIÓN COMPLETADA")
-message(sprintf("  Sensitivity: %.3f | PPV: %.3f | AUC: %.3f", 
-                sensitivity, ppv, auc_value))
-
+message("\n✓ Resultados guardados:")
+message("  - validation_detailed_results_permutation.csv")
+message("  - validation_pvalues_by_stage_permutation.csv")
+message("  - validation_summary_metrics_permutation.csv")
+message("  - validation_ior_values_by_stage_permutation.csv")
 
 # ---------- ANÁLISIS ADICIONAL: COMPARACIÓN DE DINÁMICAS ----------
 message("\n", paste(rep("=", 70), collapse = ""))
 message("ANÁLISIS EXPLORATORIO: SEÑAL POR TIPO DE DINÁMICA")
 message(paste(rep("=", 70), collapse = ""))
 
-
-# Merge con metadata de dinámicas
-results_with_dynamic <- merge(
-  results_dt,
-  ground_truth[type == "positive", .(drugA, drugB, meddra, dynamic)],
-  by = c("drugA", "drugB", "meddra"),
-  all.x = TRUE
-)
-
-
 # Performance por dinámica verdadera (solo positivos)
-perf_by_dynamic <- results_with_dynamic[type == "positive" & !is.na(dynamic), .(
+perf_by_dynamic <- results_dt[type == "positive" & !is.na(dynamic), .(
   n_total = .N,
   n_detected = sum(signal_detected, na.rm = TRUE),
   detection_rate = mean(signal_detected, na.rm = TRUE),
   mean_stages_sig = mean(n_stages_significant, na.rm = TRUE),
   mean_max_ior = mean(max_ior, na.rm = TRUE),
-  median_max_ior = median(max_ior, na.rm = TRUE)
+  median_max_ior = median(max_ior, na.rm = TRUE),
+  mean_min_pval = mean(min_pval, na.rm = TRUE)
 ), by = dynamic]
-
 
 cat("\nDesempeño por Tipo de Dinámica Inyectada:\n")
 cat("(Solo para interpretación exploratoria - no es objetivo primario)\n\n")
 print(perf_by_dynamic[order(-detection_rate)])
 
-
-fwrite(perf_by_dynamic, "validation_performance_by_dynamic.csv")
-message("\n✓ Performance por dinámica: validation_performance_by_dynamic.csv")
-
+fwrite(perf_by_dynamic, "validation_performance_by_dynamic_permutation.csv")
+message("\n✓ Performance por dinámica: validation_performance_by_dynamic_permutation.csv")
 
 # Gráfico exploratorio
-p6 <- ggplot(perf_by_dynamic, 
-             aes(x = reorder(dynamic, -detection_rate), y = detection_rate)) +
+p_dynamic <- ggplot(perf_by_dynamic, 
+                    aes(x = reorder(dynamic, -detection_rate), y = detection_rate)) +
   geom_col(fill = "steelblue", alpha = 0.8) +
   geom_text(aes(label = sprintf("%.1f%%\n(%d/%d)", 
                                 detection_rate * 100, n_detected, n_total)),
@@ -633,13 +663,60 @@ p6 <- ggplot(perf_by_dynamic,
   scale_y_continuous(limits = c(0, 1.15), labels = scales::percent) +
   labs(
     title = "Tasa de Detección por Tipo de Dinámica (Exploratorio)",
-    subtitle = "Nota: el objetivo es detectar señal, no clasificar tipos",
+    subtitle = "Método Permutacional - Nota: el objetivo es detectar señal, no clasificar tipos",
     x = "Tipo de Dinámica Inyectada", y = "Tasa de Detección"
   ) +
   theme_minimal(base_size = 12) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-
-print(p6)
-ggsave("validation_detection_by_dynamic_exploratory.png", p6, 
+print(p_dynamic)
+ggsave("validation_detection_by_dynamic_permutation.png", p_dynamic, 
        width = 10, height = 6, dpi = 300)
+
+# ---------- ANÁLISIS ADICIONAL: ETAPAS MÁS INFORMATIVAS ----------
+message("\n", paste(rep("=", 70), collapse = ""))
+message("ANÁLISIS: ETAPAS MÁS INFORMATIVAS")
+message(paste(rep("=", 70), collapse = ""))
+
+# Calcular qué etapas detectan más positivos
+stage_detection <- pval_final[type == "positive", .(
+  n_detected = sum(significant_pc99, na.rm = TRUE),
+  detection_rate = mean(significant_pc99, na.rm = TRUE),
+  mean_log_lower90 = mean(log_lower90_obs[significant_pc99], na.rm = TRUE)
+), by = .(stage, stage_name)]
+
+cat("\nEtapas más informativas para detectar positivos:\n")
+print(stage_detection[order(-detection_rate)])
+
+p_stage_power <- ggplot(stage_detection, 
+                        aes(x = reorder(stage_name, -detection_rate), y = detection_rate)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  geom_text(aes(label = sprintf("%.1f%%\n(%d)", 
+                                detection_rate * 100, n_detected)),
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(limits = c(0, max(stage_detection$detection_rate) * 1.2), 
+                     labels = scales::percent) +
+  labs(title = "Poder de Detección por Etapa NICHD",
+       subtitle = "Proporción de positivos detectados en cada etapa",
+       x = "Etapa", y = "Tasa de Detección") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_stage_power)
+ggsave("validation_detection_by_stage_permutation.png", p_stage_power, 
+       width = 10, height = 6, dpi = 300)
+
+# ---------- RESUMEN FINAL ----------
+save.image("validation_workspace_permutation.RData")
+
+message("\n", paste(rep("=", 70), collapse = ""))
+message("✓ VALIDACIÓN COMPLETADA (MÉTODO PERMUTACIONAL)")
+message(paste(rep("=", 70), collapse = ""))
+message(sprintf("  Sensitivity: %.3f | PPV: %.3f | AUC: %.3f", 
+                sensitivity, ppv, auc_value))
+message(sprintf("  F1-Score: %.3f | Accuracy: %.3f", f1_score, accuracy))
+message("\nArchivos generados:")
+message("  - Gráficos: 7 archivos PNG")
+message("  - Tablas: 6 archivos CSV")
+message("  - Workspace: validation_workspace_permutation.RData")
+message(paste(rep("=", 70), collapse = ""))

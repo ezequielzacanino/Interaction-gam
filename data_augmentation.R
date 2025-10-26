@@ -30,13 +30,8 @@ dynamic_fun <- function(type, stages) {
          "decrease" = -tanh(scaled_x),
          
          "plateau" = {
-           # Siempre crece y luego se estabiliza
-           # Punto de estabilización: 70% del recorrido
-           stabilization_point <- ceiling(n * 0.7)
-           vals <- tanh(scaled_x)
-           if (stabilization_point < n) {
-             vals[stabilization_point:n] <- vals[stabilization_point]
-           }
+           vals <- -tanh(scaled_x)^2
+           vals <- (vals - min(vals)) / (max(vals) - min(vals)) * 2 - 1  # reescala a [-1, 1]
            vals
          },
          
@@ -44,10 +39,7 @@ dynamic_fun <- function(type, stages) {
            # Siempre bajo al inicio, luego crece
            # Punto de crecimiento: 30% del recorrido
            growth_point <- ceiling(n * 0.3)
-           vals <- tanh(scaled_x)
-           if (growth_point > 1) {
-             vals[1:growth_point] <- vals[1]  # mantener bajo
-           }
+           vals <- abs(tanh(scaled_x))
            vals
          },
          
@@ -228,7 +220,7 @@ message("Tripletes candidatos (>= ", min_reports_triplet, " reportes): ",
 # ------------------------------------------------------------
 # 3) SELECCIONAR POSITIVOS
 # ------------------------------------------------------------
-if (nrow(candidatos) < n_pos) {
+if (nrow(candidatos_pos) < n_pos) {
   stop("Insuficientes candidatos positivos. Disponibles: ", nrow(candidatos), 
        ", requeridos: ", n_pos + n_neg)
 }
@@ -236,7 +228,7 @@ if (nrow(candidatos) < n_pos) {
 set.seed(123)
 candidatos_pos <- candidatos_pos[sample(.N)]
 
-positivos_sel <- candidatos[1:n_pos, .(drugA, drugB, meddra, N)]
+positivos_sel <- candidatos_pos[1:n_pos, .(drugA, drugB, meddra, N)]
 positivos_sel[, type := "positivo"]
 
 message("Seleccionados: ", n_pos, " positivos, ")
@@ -346,18 +338,15 @@ inject_dynamic_triplet <- function(drugA_id, drugB_id, event_id,
   merged_r[, p_new := p_base * (1 + (fc - 1) * f_stage * effect_size)]
   merged_r[, p_new := pmin(p_new, 0.95)]  # cap máximo
   
-  # Inyectar evento en reportes sin evento según p_new
-  reports_to_add <- merged_r[event_present == 0]
+  # NO FILTRAR - inyectar en todos los reportes
+  reports_to_inject <- merged_r
   
-  if (nrow(reports_to_add) == 0) return(0)
+  # Probabilidad ajustada: mayor efecto si ya no tiene el evento
+  reports_to_inject[, p_inject := p_new * (1 + 2 * (1 - event_present))]
+  reports_to_inject[, add_event := rbinom(.N, 1, p_inject)]
   
-  reports_to_add[, add_event := rbinom(.N, 1, p_new)]
-  reports_to_add_keep <- reports_to_add[add_event == 1]
-  
-  if (nrow(reports_to_add_keep) == 0) return(0)
-  
-  # Crear nuevas filas para ade_aug
-  new_rows <- reports_to_add_keep[, .(
+  # Crear nuevas filas SOLO para quienes no lo tenían y add_event == 1
+  new_rows <- reports_to_inject[event_present == 0 & add_event == 1, .(
     safetyreportid,
     atc_concept_id = NA_integer_,
     meddra_concept_id = event_id,
@@ -366,10 +355,12 @@ inject_dynamic_triplet <- function(drugA_id, drugB_id, event_id,
     simulated_flag = TRUE
   )]
   
-  # Añadir al dataset aumentado (usar <<- para modificar en scope superior)
+  if (nrow(new_rows) == 0) return(0)
+  
+  # Añadir al dataset aumentado
   ade_aug <<- rbindlist(list(ade_aug, new_rows), use.names = TRUE, fill = TRUE)
   
-  return(nrow(reports_to_add_keep))
+  return(nrow(new_rows))
 }
 
 # ------------------------------------------------------------
