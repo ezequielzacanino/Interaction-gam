@@ -25,6 +25,16 @@ theme_set(theme_giangreco())
 # Opciones: "p90", "p95", "p99", "p999"
 PERCENTILE_LEVEL <- "p95"  
 
+# Parámetros de fórmula para GAM
+spline_individuales <- FALSE  
+include_sex <- FALSE          
+include_stage_sex <- FALSE    
+k_spline <- 7                 
+nichd_spline <- TRUE
+bs_type <- "cs"
+select <- TRUE
+method <- "fREML" 
+
 
 # Mapeo de configuraciones por percentil
 percentile_config <- list(
@@ -549,5 +559,6 @@ writeLines(executive_summary, paste0(output_dir, "EXECUTIVE_SUMMARY.txt"))
 # Guardado
 fwrite(signal_by_triplet, paste0(output_dir, "signal_classification.csv"))
 fwrite(all_expanded, paste0(output_dir, "all_expanded_with_criteria.csv"))
+
 
 
