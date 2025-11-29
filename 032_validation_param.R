@@ -255,7 +255,7 @@ roc_obj <- roc(
 auroc_global <- auc(roc_obj)
 auroc_ci <- ci.auc(roc_obj, conf.level = 1 - config$alpha)
 
-# Mostrar resultados
+# resultados
 cat(sprintf("
 ================================================================================
 MATRIZ DE CONFUSIÓN (%s)
@@ -294,13 +294,11 @@ metrics_global <- data.table(
 
 fwrite(metrics_global, paste0(output_dir, "metrics_global.csv"))
 
-# ============================================================================
-# SECCIÓN 4: MÉTRICAS POR ETAPA
-# ============================================================================
+################################################################################
+# Métricas por etapa
+################################################################################
 
-message("\n", paste(rep("=", 80), collapse = ""))
 message("MÉTRICAS POR ETAPA")
-message(paste(rep("=", 80), collapse = ""))
 
 metrics_by_stage <- all_expanded[, {
   
@@ -331,7 +329,7 @@ metrics_by_stage <- all_expanded[, {
       auroc_val <- auc(roc_stage)
       auroc_ci_val <- ci.auc(roc_stage, conf.level = 1 - config$alpha)
       
-      # Métricas usando criterio Giangreco
+      # Métricas usando doble criterio
       tp_s <- sum(signal_giangreco == TRUE & true_label == 1, na.rm = TRUE)
       fn_s <- sum(signal_giangreco == FALSE & true_label == 1, na.rm = TRUE)
       fp_s <- sum(signal_giangreco == TRUE & true_label == 0, na.rm = TRUE)
@@ -361,17 +359,15 @@ print(metrics_by_stage[!is.na(auroc),
 
 fwrite(metrics_by_stage, paste0(output_dir, "metrics_by_stage.csv"))
 
-# ============================================================================
-# SECCIÓN 5: FIGURAS PRINCIPALES
-# ============================================================================
+################################################################################
+# Gráficos
+################################################################################
 
 message("\n", paste(rep("=", 80), collapse = ""))
 message("GENERANDO FIGURAS PRINCIPALES")
 message(paste(rep("=", 80), collapse = ""))
 
-# --- FIGURA CRÍTICA: NULL vs OBSERVADO ---
-message("Generando figura crítica: Null vs Observado")
-
+# Gráfico de distribuciones (observada vs null distribution vs negativo)
 null_sample <- null_distribution[sample(.N, min(.N, 10000))]
 
 comparison_data <- rbind(
@@ -406,7 +402,7 @@ p_null_vs_obs <- ggplot(comparison_data, aes(x = log_value, fill = source)) +
 ggsave(paste0(output_dir, "fig_CRITICAL_null_vs_observed.png"), p_null_vs_obs,
        width = 16, height = 12, dpi = 300)
 
-# --- FIGURA: CURVA ROC ---
+# Curva ROC
 message("Generando curva ROC...")
 
 p_roc <- ggroc(roc_obj, legacy.axes = TRUE, colour = "#2C3E50", size = 1.2) +
@@ -429,8 +425,7 @@ p_roc <- ggroc(roc_obj, legacy.axes = TRUE, colour = "#2C3E50", size = 1.2) +
 ggsave(paste0(output_dir, "fig_roc_curve.png"), p_roc, 
        width = 8, height = 7, dpi = 300)
 
-# --- FIGURA: DISTRIBUCIÓN LOG-IOR POR ETAPA ---
-message("Generando distribución log-IOR")
+# Distribución de log-IOR por etapa
 
 p_log_ior <- ggplot(all_expanded[type == "positive"],
                     aes(x = stage_name, y = log_ior)) +
@@ -447,8 +442,7 @@ p_log_ior <- ggplot(all_expanded[type == "positive"],
 ggsave(paste0(output_dir, "fig_log_ior_distribution.png"), p_log_ior,
        width = 12, height = 7, dpi = 300)
 
-# --- FIGURA: PERFORMANCE POR ETAPA ---
-message("Generando performance por etapa")
+# Performance por etapa
 
 metrics_by_stage_long <- melt(metrics_by_stage[!is.na(auroc)],
                               id.vars = c("stage", "stage_name"),
@@ -471,156 +465,11 @@ ggsave(paste0(output_dir, "fig_performance_by_stage.png"), p_perf_stage,
        width = 12, height = 7, dpi = 300)
 
 
-# --- FIGURA: PERFORMANCE POR DINÁMICA (CORREGIDO 2) ---
-if ("dynamic" %in% colnames(all_data) && !all(is.na(all_data$dynamic))) {
-  
-  message("Generando performance por dinámica...")
-  
-  # 1. Aislar los controles negativos (Background)
-  neg_controls <- all_data[true_label == 0]
-  
-  # 2. Iterar sobre cada dinámica positiva
-  metrics_by_dynamic <- all_data[type == "positive" & !is.na(dynamic), {
-    
-    # 'curr_pos' es .SD (los datos de este grupo, SIN la columna dynamic)
-    curr_pos <- .SD
-    
-    # CORRECCIÓN: Usar fill = TRUE porque neg_controls tiene la columna 'dynamic' 
-    # y curr_pos no la tiene (por estar agrupado por ella).
-    combined_dt <- rbind(curr_pos, neg_controls, fill = TRUE)
-    
-    if (nrow(curr_pos) < 5 || nrow(neg_controls) < 5) {
-      list(auroc = NA_real_, sensitivity = NA_real_, ppv = NA_real_, npv = NA_real_)
-    } else {
-      # Calcular ROC con el dataset combinado
-      roc_dyn <- tryCatch({
-        roc(response = combined_dt$true_label, predictor = combined_dt$max_ior,
-            direction = "<", levels = c(0, 1), quiet = TRUE)
-      }, error = function(e) NULL)
-      
-      if (is.null(roc_dyn)) {
-        list(auroc = NA_real_, sensitivity = NA_real_, ppv = NA_real_, npv = NA_real_)
-      } else {
-        auroc_val <- as.numeric(auc(roc_dyn))
-        
-        # 'Best' threshold para métricas
-        coords_dyn <- coords(roc_dyn, "best", 
-                             ret = c("sensitivity", "specificity", "ppv", "npv"),
-                             transpose = FALSE)
-        
-        list(
-          auroc = auroc_val,
-          sensitivity = coords_dyn$sensitivity[1],
-          ppv = coords_dyn$ppv[1],
-          npv = coords_dyn$npv[1]
-        )
-      }
-    }
-  }, by = dynamic] 
-  
-  # Limpiar NAs antes de graficar
-  metrics_by_dynamic <- metrics_by_dynamic[!is.na(auroc)]
-  
-  if (nrow(metrics_by_dynamic) > 0) {
-    metrics_by_dynamic_long <- melt(metrics_by_dynamic, id.vars = "dynamic",
-                                    variable.name = "metric", value.name = "value")
-    
-    p_perf_dynamic <- ggplot(metrics_by_dynamic_long,
-                             aes(x = dynamic, y = value, fill = metric)) +
-      geom_col(position = "dodge", alpha = 0.8, color = "black", width = 0.7) +
-      geom_hline(yintercept = 0.5, linetype = "dashed", color = "gray40") +
-      scale_fill_brewer(palette = "Set2", 
-                        labels = c("AUROC", "Sensibilidad", "VPP", "VPN")) +
-      labs(
-        title = sprintf("Performance de detección según dinámica(%s)", config$label),
-        x = "Dinámica", y = "Valor de Performance",
-        fill = "Métrica"
-      ) +
-      theme_giangreco() +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1))
-    
-    print(p_perf_dynamic)
-    
-    ggsave(paste0(output_dir, "fig_performance_by_dynamic.png"), p_perf_dynamic,
-           width = 10, height = 6, dpi = 300)
-    
-    fwrite(metrics_by_dynamic, paste0(output_dir, "metrics_by_dynamic.csv"))
-  } else {
-    message("⚠ No se pudieron calcular métricas por dinámica (datos insuficientes).")
-  }
-}
+################################################################################
+# Resumen
+################################################################################
 
-# --- FIGURA: BOOTSTRAP GLOBAL (OPCIONAL) ---
-message("Generando bootstrap global")
-
-set.seed(seed_base)
-
-bootstrap_global_metrics <- function(data, indices) {
-  d <- data[indices, ]
-  
-  roc_boot <- roc(response = d$true_label, predictor = d$max_ior,
-                  direction = "<", levels = c(0, 1), quiet = TRUE)
-  
-  auroc_val <- auc(roc_boot)
-  coords_boot <- coords(roc_boot, "best",
-                        ret = c("sensitivity", "ppv", "npv"))
-  
-  c(auroc = auroc_val, sensitivity = coords_boot$sensitivity,
-    ppv = coords_boot$ppv, npv = coords_boot$npv)
-}
-
-boot_global <- boot(data = all_data, statistic = bootstrap_global_metrics,
-                    R = min(500, n_bootstrap), parallel = "multicore", ncpus = n_cores)
-
-boot_ci_global <- data.table(
-  metric = c("AUROC", "Sensitivity", "PPV", "NPV"),
-  mean = colMeans(boot_global$t),
-  ci_lower = apply(boot_global$t, 2, quantile, probs = config$alpha/2),
-  ci_upper = apply(boot_global$t, 2, quantile, probs = 1 - config$alpha/2)
-)
-
-p_bootstrap <- ggplot(boot_ci_global, aes(x = metric, y = mean)) +
-  geom_col(fill = "steelblue", alpha = 0.8) +
-  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.3, linewidth = 1) +
-  geom_hline(yintercept = 0.5, linetype = "dashed", color = "gray40") +
-  labs(
-    title = sprintf("Bootstrap Performance (Global, IC %.0f%%)", 100*(1-config$alpha)),
-    subtitle = sprintf("Based on %d resamples", nrow(boot_global$t)),
-    x = "Metric", y = "Value"
-  )
-
-ggsave(paste0(output_dir, "fig_bootstrap_global.png"), p_bootstrap,
-       width = 8, height = 6, dpi = 300)
-
-fwrite(boot_ci_global, paste0(output_dir, "bootstrap_ci_global.csv"))
-
-# --- FIGURA: DISTRIBUCIÓN DE FOLD-CHANGES ---
-if ("fold_change" %in% colnames(pos_meta) && !all(is.na(pos_meta$fold_change))) {
-  
-  message("Generando distribución de fold-changes")
-  
-  p_fc <- ggplot(pos_meta, aes(x = fold_change)) +
-    geom_histogram(aes(y = after_stat(density)), bins = 30,
-                   fill = "steelblue", alpha = 0.7) +
-    geom_density(color = "darkblue", linewidth = 1.2) +
-    labs(
-      title = "Distribution of Fold-Changes (Positive Controls)",
-      x = "Fold Change", y = "Density"
-    )
-  
-  ggsave(paste0(output_dir, "fig_fold_change_distribution.png"), p_fc,
-         width = 8, height = 6, dpi = 300)
-}
-
-# ============================================================================
-# SECCIÓN 6: RESUMEN EJECUTIVO
-# ============================================================================
-
-message("\n", paste(rep("=", 80), collapse = ""))
-message("GENERANDO RESUMEN")
-message(paste(rep("=", 80), collapse = ""))
-
-# ComparaciÃ³n de criterios
+# comparo criterio simple vs doble
 n_nominal_only <- sum(all_expanded[, any(nominal_sig & !nullmodel_sig), by = triplet_id]$V1)
 n_giangreco <- sum(all_data$signal_detected, na.rm = TRUE)
 
@@ -633,7 +482,6 @@ model_config_summary <- sprintf(
   Include sex:              %s
   Stage-sex interaction:    %s
   Number of knots (k):      %d",
-  bs_type,
   ifelse(select, "TRUE", "FALSE"),
   ifelse(nichd_spline, "spline", "linear"),
   ifelse(spline_individuales, "splines", "linear"),
@@ -644,14 +492,13 @@ model_config_summary <- sprintf(
 
 executive_summary <- paste0("
 ================================================================================
-RESUMEN EJECUTIVO - VALIDACION dGAM (", config$label, ")
+RESUMEN DE VALIDACION (", config$label, ")
 ================================================================================
 
-CRITERIO DE SIGNIFICANCIA APLICADO (Giangreco et al. 2022):
+CRITERIO DE DETECCIÓN DE SEÑAL:
   Percentil seleccionado:   ", PERCENTILE_LEVEL, "
   1. Nominal:               IC90% log(IOR) > 0
   2. Null Model:            IC90% log(IOR) > ", config$threshold_col, "
-  -> Senal detectada si AMBOS criterios se cumplen en >=1 etapa
 
 CONFIGURACION DEL MODELO GAM:
 ", model_config_summary, "
@@ -677,7 +524,7 @@ METRICAS DE RENDIMIENTO GLOBAL:
 
 COMPARACION CRITERIOS:
   Solo Nominal (IC90% > 0):    ", n_nominal_only + n_giangreco, " senales
-  Con Null Model (Giangreco):  ", n_giangreco, " senales
+  Con Criterio doble:  ", n_giangreco, " senales
   Reduccion:                   ", 
   sprintf("%.1f", 100 * (1 - n_giangreco / (n_nominal_only + n_giangreco))), "%
 
@@ -692,16 +539,6 @@ METRICAS POR ETAPA (Promedio de etapas validas):
   "  (rango: ", sprintf("%.3f", min(metrics_by_stage$ppv, na.rm = TRUE)),
   " - ", sprintf("%.3f", max(metrics_by_stage$ppv, na.rm = TRUE)), ")
 
-ARCHIVOS GENERADOS:
-  - metrics_global.csv
-  - metrics_by_stage.csv
-  - signal_classification.csv
-  - fig_CRITICAL_null_vs_observed.png
-  - fig_roc_curve.png
-  - fig_log_ior_distribution.png
-  - fig_performance_by_stage.png
-  ", ifelse(exists("p_perf_dynamic"), "- fig_performance_by_dynamic.csv\n", ""), "
-
 Fecha: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "
 ================================================================================
 ")
@@ -709,229 +546,8 @@ Fecha: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "
 cat(executive_summary)
 writeLines(executive_summary, paste0(output_dir, "EXECUTIVE_SUMMARY.txt"))
 
-# Guardar clasificaciones finales
+# Guardado
 fwrite(signal_by_triplet, paste0(output_dir, "signal_classification.csv"))
 fwrite(all_expanded, paste0(output_dir, "all_expanded_with_criteria.csv"))
 
-message("\n", paste(rep("=", 80), collapse = ""))
-message(" VALIDACIÓN COMPLETADA")
-message(paste(rep("=", 80), collapse = ""))
-message(sprintf("  Percentil usado:          %s", PERCENTILE_LEVEL))
-message(sprintf("  Criterio Giangreco:       COMPLETO (doble umbral)"))
-message(sprintf("  Distribución nula:        INTEGRADA"))
-message(sprintf("  Resultados guardados en:  %s", output_dir))
-message(paste(rep("=", 80), collapse = ""))
 
-
-
-# ============================================================================
-# SECCIÓN 4: MÉTRICAS POR ETAPA (AJUSTADO POR SEÑAL ACTIVA)
-# ============================================================================
-
-message("\n", paste(rep("=", 80), collapse = ""))
-message("CALCULANDO MÉTRICAS AJUSTADAS (Solo Señales Activas)")
-message(paste(rep("=", 80), collapse = ""))
-
-# 1. Definir dónde existe realmente la señal según la dinámica
-#    (Basado en las funciones tanh de 00_functions.R)
-#    Increase: Sube desde etapa 4.
-#    Decrease: Baja hasta etapa 4.
-#    Plateau: Centro (3, 4, 5).
-#    Inverse: Bordes (1, 2, 6, 7).
-
-all_expanded[, is_active_signal := FALSE] 
-
-# Negativos: Nunca tienen señal activa (se quedan en FALSE)
-# Positivos: Depende de la dinámica
-all_expanded[type == "positive" & dynamic == "uniform", is_active_signal := TRUE]
-all_expanded[type == "positive" & dynamic == "increase" & stage %in% 4:7, is_active_signal := TRUE]
-all_expanded[type == "positive" & dynamic == "decrease" & stage %in% 1:4, is_active_signal := TRUE]
-all_expanded[type == "positive" & dynamic == "plateau" & stage %in% 3:5, is_active_signal := TRUE]
-all_expanded[type == "positive" & dynamic == "inverse_plateau" & stage %in% c(1,2,6,7), is_active_signal := TRUE]
-
-# 2. Filtrar datos para la evaluación de "Power Real"
-#    Mantenemos TODOS los negativos (para especificidad/FP)
-#    Mantenemos SOLO los positivos donde hay señal activa (para sensibilidad/TP)
-data_for_plots <- all_expanded[true_label == 0 | (true_label == 1 & is_active_signal == TRUE)]
-
-message(sprintf("Positivos originales: %d | Positivos activos usados: %d", 
-                nrow(all_expanded[true_label==1]), nrow(data_for_plots[true_label==1])))
-
-# 3. Función de métricas para Bootstrap
-calc_perf_metrics <- function(d, indices) {
-  d_boot <- d[indices, ]
-  
-  # Conteos básicos
-  tp <- sum(d_boot$signal_giangreco == TRUE & d_boot$true_label == 1, na.rm = TRUE)
-  fn <- sum(d_boot$signal_giangreco == FALSE & d_boot$true_label == 1, na.rm = TRUE)
-  fp <- sum(d_boot$signal_giangreco == TRUE & d_boot$true_label == 0, na.rm = TRUE)
-  tn <- sum(d_boot$signal_giangreco == FALSE & d_boot$true_label == 0, na.rm = TRUE)
-  
-  # Métricas
-  sens <- if((tp + fn) > 0) tp / (tp + fn) else NA  # Power
-  ppv  <- if((tp + fp) > 0) tp / (tp + fp) else NA
-  npv  <- if((tn + fn) > 0) tn / (tn + fn) else NA
-  
-  # AUROC (Probabilístico)
-  roc_val <- tryCatch({
-    r <- roc(d_boot$true_label, d_boot$ior_value, direction="<", levels=c(0,1), quiet=TRUE)
-    as.numeric(auc(r))
-  }, error = function(e) NA)
-  
-  return(c(AUROC = roc_val, Power = sens, PPV = ppv, NPV = npv))
-}
-
-# 4. Ejecutar Bootstrap por Etapa
-metric_names <- c("AUROC", "Power", "PPV", "NPV")
-stage_boot_list <- list()
-set.seed(seed_base)
-
-for (s in unique(data_for_plots$stage_name)) {
-  stage_subset <- data_for_plots[stage_name == s]
-  
-  # Validar que existan ambas clases en esta etapa tras el filtro
-  if (length(unique(stage_subset$true_label)) == 2) {
-    
-    boot_res <- boot(data = stage_subset, statistic = calc_perf_metrics, R = 500)
-    
-    # Calcular medias e IC
-    means <- colMeans(boot_res$t, na.rm = TRUE)
-    ci_vals <- apply(boot_res$t, 2, quantile, probs = c(0.05, 0.95), na.rm = TRUE)
-    
-    # Crear DT explícito
-    dt_res <- data.table(
-      stage_name = s,
-      metric = metric_names,
-      mean = as.numeric(means),
-      lower = as.numeric(ci_vals[1, ]),
-      upper = as.numeric(ci_vals[2, ])
-    )
-    stage_boot_list[[s]] <- dt_res
-  }
-}
-
-stage_metrics_boot <- rbindlist(stage_boot_list)
-
-# ============================================================================
-# GENERAR GRÁFICOS SOLICITADOS
-# ============================================================================
-
-if (nrow(stage_metrics_boot) > 0) {
-  
-  # Ordenar factores para visualización correcta
-  stage_metrics_boot[, stage_name := factor(stage_name, levels = niveles_nichd)]
-  stage_metrics_boot[, metric := factor(metric, levels = metric_names)]
-  
-  # --- GRÁFICO 1: 4 PANELES POR ETAPA ---
-  p_panels <- ggplot(stage_metrics_boot, aes(x = stage_name, y = mean, group = 1)) +
-    # Puntos centrales
-    geom_point(color = "#2c3e50", size = 2.5) +
-    # Barras de error
-    geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.15, color = "#2c3e50") +
-    # Facetas
-    facet_wrap(~metric, scales = "free_y", ncol = 2) +
-    # Estética
-    theme_giangreco() +
-    labs(
-      title = "Métricas de rendimiento según etapa del desarrollo (en señales activas)",
-      x = "", 
-      y = "Performance"
-    ) +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      strip.text = element_text(face = "bold", size = 12, color = "white"),
-      strip.background = element_rect(fill = "#2c3e50")
-    )
-  
-  print(p_panels)
-  ggsave(paste0(output_dir, "fig_panel_stage_performance_active.png"), 
-         p_panels, width = 12, height = 10, dpi = 300)
-}
-
-
-
-
-
-
-
-# Asegúrate de estar en el directorio correcto donde se guardó este archivo en el paso 03
-file_path <- "./validation_results_p95/all_expanded_with_criteria.csv" 
-
-if (!file.exists(file_path)) {
-  stop("No se encuentra el archivo all_expanded_with_criteria.csv. Verifica la ruta.")
-}
-
-dt <- fread(file_path)
-
-# 2. Calcular el Ancho del Intervalo de Confianza (Hacia el límite inferior)
-# Width = Estimación Central - Límite Inferior
-# Nota: Como log_ior suele ser mayor que lower90, esto da un valor positivo que representa la incertidumbre.
-dt[, ci_width := log_ior - log_ior_lower90]
-
-# 3. Definir Categorías para el Color
-# Umbral de "Locura numérica": Log-IOR > 10 (aprox IOR > 22,000)
-umbral_extremo <- 10
-
-dt[, category := fcase(
-  # Caso 1: Valores dentro de rango normal
-  abs(log_ior) <= umbral_extremo, "Rango habitual",
-  
-  # Caso 2: Extremo pero NO detectado (El sistema funcionó: IC muy ancho o cruzó 0)
-  abs(log_ior) > umbral_extremo & signal_giangreco == FALSE, "NO-detectado",
-  
-  # Caso 3: Extremo y DETECTADO (Ojo: Puede ser FP técnico o señal masiva)
-  abs(log_ior) > umbral_extremo & signal_giangreco == TRUE, "Detectado"
-)]
-
-# Ordenar niveles para que la leyenda salga bonita
-dt[, category := factor(category, levels = c("Rango habitual", 
-                                             "NO-detectado", 
-                                             "Detectado"))]
-
-# 4. Generar el Gráfico
-p_diagnostic <- ggplot(dt, aes(x = log_ior, y = ci_width, color = category)) +
-  # Puntos
-  geom_point(aes(shape = type), alpha = 0.6, size = 4) +
-  
-  # Colores manuales: 
-  # Gris para normal, 
-  # Azul/Verde para los rechazados (sistema funcionando), 
-  # Rojo para los detectados (alerta)
-  scale_color_manual(values = c(
-    "Rango habitual" = "gray70",
-    "NO-detectado" = "#2ecc71", # Verde: El filtro funcionó
-    "Detectado" = "#e74c3c" # Rojo: Señal extrema aceptada
-  )) +
-  
-  # Líneas de referencia para el umbral de extremo
-  geom_vline(xintercept = c(-umbral_extremo, umbral_extremo), 
-             linetype = "dashed", color = "black", alpha = 0.5) +
-  
-  # Títulos y etiquetas
-  labs(
-    title = "Comportamiento de señales. Magnitud vs Incertidumbre",
-    x = "Log IOR (Estimación Puntual)",
-    y = "Incertidumbre (Log IOR - Límite Inferior 90%)",
-    color = "Estado de Detección"
-  ) +
-  
-  # Tema limpio
-  theme_minimal() +
-  theme(
-    legend.position = "bottom",
-    plot.title = element_text(face = "bold", size = 14),
-    axis.title = element_text(face = "bold")
-  ) +
-  
-  # Zoom para no perder de vista los datos si hay un outlier infinito
-  coord_cartesian(xlim = c(-30, 30), ylim = c(0, 100)) 
-
-# 5. Mostrar y Guardar
-print(p_diagnostic)
-
-ggsave("./validation_results_p95/fig_diagnostic_extremes_classification.png", 
-       p_diagnostic, width = 10, height = 7, dpi = 300)
-
-# 6. Resumen Numérico en consola
-message("\n--- Resumen de Casos Extremos ---")
-print(dt[, .N, by = category])
