@@ -1,0 +1,10 @@
+metric,value
+n_positive_total,500
+n_positive_injected,366
+n_positive_modeled,366
+n_negative_total,5000
+n_negative_modeled,5000
+mean_ior_positive,1201740220.48469
+mean_ior_negative,7424465928128900
+mean_stages_sig_positive,1.96174863387978
+mean_stages_sig_negative,1.0284
