@@ -110,6 +110,10 @@ print(null_thresholds[, .(stage, stage_name, threshold, mean_null, sd_null, n_sa
 pos_valid <- positives_scores[model_success == TRUE & injection_success == TRUE]
 neg_valid <- negatives_scores[model_success == TRUE]
 
+# saco a uniform del análisis, porque solo sirve para comparar scores promedios de las otras dinámicas
+# porque uniform por definición no inyecta reportes -->  return(rep(0, N)
+pos_valid <- pos_valid[dynamic != "uniform"]
+
 message(sprintf("\n Datos utilizados:"))
 message(sprintf("  Positivos válidos: %d", nrow(pos_valid)))
 message(sprintf("  Negativos válidos: %d", nrow(neg_valid)))
@@ -559,6 +563,7 @@ writeLines(executive_summary, paste0(output_dir, "EXECUTIVE_SUMMARY.txt"))
 # Guardado
 fwrite(signal_by_triplet, paste0(output_dir, "signal_classification.csv"))
 fwrite(all_expanded, paste0(output_dir, "all_expanded_with_criteria.csv"))
+
 
 
 
