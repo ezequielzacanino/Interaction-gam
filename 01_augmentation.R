@@ -211,6 +211,12 @@ positives_results <- foreach(
          message = paste("Error en inyección:", e$message))   # Chequeo por si falla
   })
 
+  inj_success <- inj_result$success
+  n_injected_val <- inj_result$n_injected
+  n_coadmin_val <- inj_result$n_coadmin
+  diag_data <- list(inj_result$diagnostics)
+  inj_message <- if(!is.null(inj_result$message)) inj_result$message else NA_character_
+
   if (!inj_result$success) {
     result <- data.table(
       triplet_id = i,
@@ -223,8 +229,8 @@ positives_results <- foreach(
       fold_change = rowt$fold_change,
       model_success = FALSE,
       injection_success = FALSE,
-      n_injected = inj_result$n_injected,
-      n_coadmin = inj_result$n_coadmin,
+      n_injected = n_injected_val,
+      n_coadmin = n_coadmin_val,
       n_events = NA_integer_,
       n_stages_significant = NA_integer_,
       max_ior = NA_real_,
@@ -234,7 +240,7 @@ positives_results <- foreach(
       log_ior = list(rep(NA_real_, 7)),
       log_ior_lower90 = list(rep(NA_real_, 7)),
       ior_values = list(rep(NA_real_, 7)),
-      diagnostics = list(NULL),                   
+      diagnostics = diag_data,
       spline_individuales = spline_individuales,
       nichd_spline = nichd_spline,
       include_sex = include_sex,
@@ -242,8 +248,8 @@ positives_results <- foreach(
       k_spline = k_spline,
       bs_type = bs_type,
       select = select,
-      formula_used = if(model_res$success) model_res$formula_used else NA_character_ ,
-      message = inj_result$message
+      formula_used = NA_character_,
+      message = inj_message
     )
     rm(inj_result); gc(verbose = FALSE)
     return(result)
@@ -273,10 +279,14 @@ positives_results <- foreach(
   })
   
   ###########
-  # Guardo diagnósticos antes de borrar inj_result
+  # Guardo diagnósticos y resultados antes de borrar inj_result
   ###########
 
-  diag_data <- list(inj_result$diagnostics) 
+  model_success <- model_res$success
+  n_events_val <- if(!is.null(model_res$n_events)) model_res$n_events else NA_integer_
+  n_coadmin_model <- if(!is.null(model_res$n_coadmin)) model_res$n_coadmin else n_coadmin_val
+  error_msg_val <- if(!is.null(model_res$error_msg)) model_res$error_msg else NA_character_
+  formula_val <- if(model_success && !is.null(model_res$formula_used)) model_res$formula_used else NA_character_
   
   rm(inj_result); gc(verbose = FALSE)
   
@@ -292,9 +302,9 @@ positives_results <- foreach(
       fold_change = rowt$fold_change,
       model_success = FALSE,
       injection_success = TRUE,
-      n_injected = 0,
-      n_coadmin = model_res$n_coadmin,
-      n_events = model_res$n_events,
+      n_injected = n_injected_val,
+      n_coadmin = n_coadmin_model,
+      n_events = n_events_val,
       n_stages_significant = NA_integer_,
       max_ior = NA_real_,
       mean_ior = NA_real_,
@@ -303,8 +313,16 @@ positives_results <- foreach(
       log_ior = list(rep(NA_real_, 7)),
       log_ior_lower90 = list(rep(NA_real_, 7)),
       ior_values = list(rep(NA_real_, 7)),
-      diagnostics = diag_data, 
-      error_msg = if(!is.null(model_res$error_msg)) model_res$error_msg else NA_character_
+      diagnostics = diag_data,
+      spline_individuales = spline_individuales,
+      nichd_spline = nichd_spline,
+      include_sex = include_sex,
+      include_stage_sex = include_stage_sex,
+      k_spline = k_spline,
+      bs_type = bs_type,
+      select = select,
+      formula_used = formula_val,
+      error_msg = error_msg_val
     )
     rm(model_res); gc(verbose = FALSE)
     return(result)
@@ -325,7 +343,7 @@ positives_results <- foreach(
     fold_change = rowt$fold_change,
     model_success = TRUE,
     injection_success = TRUE,
-    n_injected = 0,
+    n_injected = n_injected_val,
     n_coadmin = model_res$n_coadmin,
     n_events = model_res$n_events,
     n_stages_significant = model_res$n_stages_significant,
@@ -336,7 +354,15 @@ positives_results <- foreach(
     log_ior = list(model_res$log_ior),
     log_ior_lower90 = list(model_res$log_ior_lower90),
     ior_values = list(model_res$ior_values),
-    diagnostics = diag_data 
+    diagnostics = diag_data,
+    spline_individuales = spline_individuales,
+    nichd_spline = nichd_spline,
+    include_sex = include_sex,
+    include_stage_sex = include_stage_sex,
+    k_spline = k_spline,
+    bs_type = bs_type,
+    select = select,
+    formula_used = formula_val
   )
   
   rm(model_res); gc(verbose = FALSE)
@@ -774,5 +800,6 @@ summary_stats <- data.table(
 
 print(summary_stats)
 fwrite(summary_stats, paste0(output_dir, "summary_statistics.csv"))
+
 
 
