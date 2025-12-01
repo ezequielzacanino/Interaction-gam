@@ -160,16 +160,15 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   target_reports[, e_old := as.integer(safetyreportid %in% event_in_report)]
   
   # 3- Calculo tasa base (t_ij)
-  # intersección A y B
-  reports_any <- union(reports_A, reports_B)
-  event_in_any <- unique(ade_raw_dt[
-    meddra_concept_id == event_id, 
-    safetyreportid
-  ])
-  
-  # e_j = P(evento | droga)
-  e_j <- mean(reports_any %in% event_in_any)
-  
+  # cambio por probabilidad de la unión de eventos independientes
+  # Calcular tasas base individuales
+  p_baseA <- mean(reports_A %in% event_in_report)
+  p_baseB <- mean(reports_B %in% event_in_report)
+
+  # e_j = P(evento | A ∪ B) asumiendo independencia
+  # fórmula: P(A ∪ B) = P(A) + P(B) - P(A) × P(B)
+  e_j <- p_baseA + p_baseB - (p_baseA * p_baseB)
+
   # t_ij = fold_change * e_j 
   t_ij <- fold_change * e_j
   
@@ -982,6 +981,7 @@ calculate_validation_metrics <- function(signal_by_triplet) {
     f1_score = f1_score
   )
 }
+
 
 
 
