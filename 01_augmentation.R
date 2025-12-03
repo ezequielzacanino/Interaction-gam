@@ -153,6 +153,10 @@ pos_meta[, `:=`(
   triplet_id = 1:.N
 )]
 
+# Flageo los 30 tripletes con mayor cantidad de reportes para utilizarlos después en análisis de escasez
+top30_ids <- pos_meta[order(-N)][1:min(.N, 30), triplet_id]
+pos_meta[, is_top30 := triplet_id %in% top30_ids]
+
 fwrite(pos_meta, paste0(output_dir, "positive_triplets_metadata.csv"))
 
 
@@ -169,7 +173,8 @@ registerDoParallel(cl)
 clusterExport(cl, c("inject_signal", "fit_differential_gam",
                     "ade_raw_dt", "niveles_nichd", "dynamic_fun", "z90",
                     "pos_meta", "normalize_triplet_result", "spline_individuales", "include_sex",
-                    "include_stage_sex", "k_spline", "nichd_spline", "bs_type", "select"), 
+                    "include_stage_sex", "k_spline", "nichd_spline", "bs_type", "select",
+                    "output_dir"), 
               envir = environment())
 
 clusterEvalQ(cl, {
@@ -210,7 +215,16 @@ positives_results <- foreach(
     list(success = FALSE, n_injected = 0, n_coadmin = 0, 
          message = paste("Error en inyección:", e$message))   # Chequeo por si falla
   })
-
+  
+  if (inj_result$success && rowt$is_top30) {        # Guardado de datasets aumentados para los 30 tripletes más reportados
+    # nombre: dataset_idA_idB.csv 
+    # Agrego triplet_id para evitar sobrescritura si el par drogas se repite con otro evento
+    file_name <- paste0("dataset_sensitivity_", rowt$drugA, "_", rowt$drugB, ".csv")
+    full_path <- file.path(output_dir, file_name)
+    
+    # guardo el dataset aumentado que está en inj_result$ade_aug
+    fwrite(inj_result$ade_aug, full_path)
+  }
   inj_success <- inj_result$success
   n_injected_val <- inj_result$n_injected
   n_coadmin_val <- inj_result$n_coadmin
@@ -800,6 +814,7 @@ summary_stats <- data.table(
 
 print(summary_stats)
 fwrite(summary_stats, paste0(output_dir, "summary_statistics.csv"))
+
 
 
 
