@@ -83,8 +83,17 @@ n_bootstrap <- 1000
 n_cores <- max(1, detectCores() - 1)
 seed_base <- 2025
 
+# se agrega sufijo a la carpeta de guardado para tener clasificado según los valores de los parámetros
+suffix <- paste0(
+  if (spline_individuales) "si" else "",
+  if (include_sex) "s" else "",
+  if (include_stage_sex) "ss" else "",
+  if (nichd_spline) "ns" else "",
+  bs_type
+)
+
 # Directorio de salida con identificador de percentil
-output_dir <- paste0("./validation_results_", PERCENTILE_LEVEL, "/")
+output_dir <- paste0("./results/validation_results_", PERCENTILE_LEVEL, "_", suffix, "/")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 ################################################################################
@@ -563,6 +572,7 @@ writeLines(executive_summary, paste0(output_dir, "EXECUTIVE_SUMMARY.txt"))
 # Guardado
 fwrite(signal_by_triplet, paste0(output_dir, "signal_classification.csv"))
 fwrite(all_expanded, paste0(output_dir, "all_expanded_with_criteria.csv"))
+
 
 
 
