@@ -62,9 +62,10 @@ Una señal es **positiva** si al menos una etapa cumple:
 
 **Fórmula de base:**
 ```r
-evento ~ s(nichd_num, by=drugA_drugB, bs="cs", k=7) +
+evento ~ drugA + drugB +
          s(nichd_num, bs="cs", k=7) +
-         drugA + drugB
+         s(nichd_num, by=drugA_drugB, bs="cs", k=7) 
+         
 ```
 
 **Métrica principal:**
