@@ -39,6 +39,24 @@ bs_type <- "cs"
 select <- TRUE
 method <- "fREML"
 
+# codifico cómo se guardan los resultados de las distintas formulas
+suffix <- paste0(
+  if (spline_individuales) "si" else "",
+  if (include_sex) "s" else "",
+  if (include_stage_sex) "ss" else "",
+  if (nichd_spline) "ns" else "",
+  bs_type
+)
+
+ruta_null_pool_meta <- paste0("./results/", suffix, "/augmentation_results/null_pool_reports_metadata.csv")
+
+output_dir <- paste0("./results/", suffix, "/null_distribution_results/")
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+
+n_cores <- max(1, floor(detectCores() * 0.5))
+batch_size <- 5  # para que no colapse por llenado de memoria
+checkpoint_frequency <- 2  # guardo resultados cada 5 lotes
 
 ################################################################################
 # Carga de funciones
@@ -103,246 +121,293 @@ pool_reports_meta[is.na(events), events := list(integer(0))]
 message(sprintf("Pool nulo: %s reportes", format(nrow(pool_reports_meta), big.mark = ",")))
 
 ################################################################################
-# LOOP PRINCIPAL SECUENCIAL
+# LOOP PRINCIPAL PARALELIZADO
 ################################################################################
 
-# no estoy logrando hacer que esto funcione con paralelización sin que crashee pc
-# posiblemente muy ineficiente
-# tiempo aprox para 5000 tripletes: 1 día y medio
+# Configuración de cluster
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
 
-all_results <- list()
+# objetos necesarios
+clusterExport(cl, c(
+  "ade_raw_dt", "pool_reports_meta", "niveles_nichd",
+  "permute_pool", "reintroduce_permuted_reports", "make_triplets_per_report",
+  "fit_differential_gam",
+  "perm_events", "perm_drugs", "min_reports_triplet", 
+  "max_triplets_per_permutation", "seed_base",
+  "spline_individuales", "include_sex", "include_stage_sex",
+  "k_spline", "nichd_spline", "bs_type", "select", "method"
+), envir = environment())
+
+# librerías
+clusterEvalQ(cl, {
+  library(data.table)
+  library(mgcv)
+})
+  
+# Variables de control
+n_batches <- ceiling(max_permutation_attempts / batch_size)
 triplets_collected <- 0
 permutation_attempt <- 0
 failed_attempts <- 0
+batch_files <- character()  # para rastreo de archivos temporales
 
-while (triplets_collected < target_total_triplets && 
-       permutation_attempt < max_permutation_attempts) {
+for (batch in 1:n_batches) {
   
-  permutation_attempt <- permutation_attempt + 1
-  
-  if (permutation_attempt %% 5 == 1) {
-    message(sprintf("\n--- Permutación %d | Tripletes: %d/%d (%.1f%%) ---",
-                    permutation_attempt, 
-                    triplets_collected, 
-                    target_total_triplets,
-                    100 * triplets_collected / target_total_triplets))
+  # Verificar si ya alcanzamos el objetivo
+  if (triplets_collected >= target_total_triplets) {
+    message("\n¡Objetivo alcanzado!")
+    break
   }
   
-  set.seed(seed_base + permutation_attempt)
+  start_perm <- (batch - 1) * batch_size + 1
+  end_perm <- min(batch * batch_size, max_permutation_attempts)
+  batch_perms <- start_perm:end_perm
   
-  ###########
-  # Permutación del pool
-  ###########
+  message(sprintf("\n=== Lote %d/%d | Permutaciones %d-%d ===", 
+                  batch, n_batches, start_perm, end_perm))
   
-  permuted_pool <- tryCatch({
-    permute_pool(
-      pool_reports_meta, niveles_nichd,
-      perm_events = perm_events, 
-      perm_drugs = perm_drugs,
-      seed = permutation_attempt
-    )
-  }, error = function(e) {
-    message(sprintf(" error %s", e$message))
-    NULL
-  })
-  
-  if (is.null(permuted_pool) || nrow(permuted_pool) == 0) {
-    failed_attempts <- failed_attempts + 1
-    next
-  }
-  
-  ###########
-  # Construcción de tripletes
-  ###########
-  
-  triplets_perm <- tryCatch({
-    permuted_pool[, {
-      drugs_vec <- drugs_perm[[1]]
-      events_vec <- events_perm[[1]]
+  # Procesamiento paralelo del lote
+  batch_results <- foreach(
+    perm_id = batch_perms,
+    .packages = c("data.table", "mgcv"),
+    .errorhandling = "pass",
+    .verbose = FALSE
+  ) %dopar% {
+    
+    set.seed(seed_base + perm_id)
+    
+    ###########
+    # Permutación del pool
+    ###########
+    
+    permuted_pool <- tryCatch({
+      permute_pool(
+        pool_reports_meta, niveles_nichd,
+        perm_events = perm_events, 
+        perm_drugs = perm_drugs,
+        seed = perm_id
+      )
+    }, error = function(e) NULL)
+    
+    if (is.null(permuted_pool) || nrow(permuted_pool) == 0) {
+      return(list(success = FALSE, reason = "permutation_failed"))
+    }
+    
+    ###########
+    # Construcción de tripletes
+    ###########
+    
+    triplets_perm <- tryCatch({
+      permuted_pool[, {
+        drugs_vec <- drugs_perm[[1]]
+        events_vec <- events_perm[[1]]
+        
+        if (length(drugs_vec) >= 2 && length(events_vec) >= 1) {
+          make_triplets_per_report(drugs_vec, events_vec, safetyreportid, nichd_num)
+        } else {
+          data.table()
+        }
+      }, by = safetyreportid]
+    }, error = function(e) NULL)
+    
+    if (is.null(triplets_perm) || nrow(triplets_perm) == 0) {
+      return(list(success = FALSE, reason = "no_triplets"))
+    }
+    
+    ###########
+    # Filtrado y selección de tripletes
+    ###########
+    
+    trip_counts <- unique(triplets_perm[, .(drugA, drugB, meddra, safetyreportid)])[
+      , .N, by = .(drugA, drugB, meddra)
+    ]
+    candidate_triplets <- trip_counts[N >= min_reports_triplet]
+    
+    if (nrow(candidate_triplets) == 0) {
+      return(list(success = FALSE, reason = "no_candidates"))
+    }
+    
+    n_to_sample <- min(nrow(candidate_triplets), max_triplets_per_permutation)
+    selected_triplets <- candidate_triplets[sample(.N, n_to_sample)]
+    
+    ###########
+    # Reintroducción de reportes permutados
+    ###########
+    
+    ade_modified <- tryCatch({
+      reintroduce_permuted_reports(ade_raw_dt, permuted_pool)
+    }, error = function(e) NULL)
+    
+    if (is.null(ade_modified) || nrow(ade_modified) == 0) {
+      return(list(success = FALSE, reason = "reintroduction_failed"))
+    }
+    
+    ###########
+    # Validación de tripletes
+    ###########
+    
+    reports_by_drug <- ade_modified[!is.na(atc_concept_id), 
+                                    .(reports = list(unique(safetyreportid))), 
+                                    by = atc_concept_id]
+    setkey(reports_by_drug, atc_concept_id)
+    
+    reports_by_event <- ade_modified[!is.na(meddra_concept_id), 
+                                     .(reports = list(unique(safetyreportid))), 
+                                     by = meddra_concept_id]
+    setkey(reports_by_event, meddra_concept_id)
+    
+    validation_results <- selected_triplets[, {
+      rA <- reports_by_drug[.(drugA), reports][[1]]
+      rB <- reports_by_drug[.(drugB), reports][[1]]
+      rE <- reports_by_event[.(meddra), reports][[1]]
       
-      if (length(drugs_vec) >= 2 && length(events_vec) >= 1) {
-        make_triplets_per_report(drugs_vec, events_vec, safetyreportid, nichd_num)
-      } else {
-        data.table()
-      }
-    }, by = safetyreportid]
-  }, error = function(e) NULL)
-  
-  if (is.null(triplets_perm) || nrow(triplets_perm) == 0) {
-    rm(permuted_pool)
-    gc(verbose = FALSE)
-    failed_attempts <- failed_attempts + 1
-    next
+      n_coadmin <- if (!is.null(rA) && !is.null(rB)) {
+        length(intersect(rA, rB))
+      } else 0
+      
+      n_events <- if (!is.null(rE)) length(rE) else 0
+      
+      data.table(
+        drugA, drugB, meddra,
+        valid_gam = (n_coadmin >= 3 && n_events >= 5)
+      )
+    }, by = .I]
+    
+    valid_triplets <- validation_results[valid_gam == TRUE]
+    
+    if (nrow(valid_triplets) == 0) {
+      return(list(success = FALSE, reason = "no_valid_triplets"))
+    }
+    
+    ###########
+    # Ajuste de modelos
+    ###########
+    
+    triplet_results <- list()
+    
+    for (ti in seq_len(nrow(valid_triplets))) {
+      
+      rowt <- valid_triplets[ti]
+      
+      model_res <- tryCatch({
+        fit_differential_gam(
+          drugA_id = rowt$drugA,
+          drugB_id = rowt$drugB,
+          event_id = rowt$meddra,
+          ade_data = ade_modified,
+          spline_individuales = spline_individuales,
+          include_sex = include_sex,
+          nichd_spline = nichd_spline,
+          include_stage_sex = include_stage_sex,
+          bs_type = bs_type,
+          select = select,
+          k_spline = k_spline
+        )
+      }, error = function(e) list(success = FALSE))
+      
+      if (!model_res$success) next
+      
+      if (any(is.na(model_res$log_ior)) || 
+          any(is.infinite(model_res$log_ior)) ||
+          any(abs(model_res$log_ior) > 20)) next
+      
+      # guardado de resultados
+      result_dt <- data.table(
+        drugA = rowt$drugA,
+        drugB = rowt$drugB,
+        meddra = rowt$meddra,
+        stage = 1:7,
+        log_lower90 = model_res$log_ior_lower90,
+        log_ior = model_res$log_ior,
+        permutation = perm_id,
+        spline_individuales = spline_individuales,
+        include_sex = include_sex,
+        nichd_spline = nichd_spline,
+        include_stage_sex = include_stage_sex,
+        k_spline = k_spline,
+        bs_type = bs_type,
+        select = select,
+        formula_used = if(model_res$success) model_res$formula_used else NA_character_
+      )
+      
+      triplet_results[[length(triplet_results) + 1]] <- result_dt
+    }
+    
+    # Limpieza de memoria en worker
+    rm(permuted_pool, triplets_perm, trip_counts, candidate_triplets,
+       selected_triplets, ade_modified, reports_by_drug, reports_by_event,
+       validation_results, valid_triplets)
+    gc(verbose = FALSE, full = TRUE)
+    
+    # resultados del worker
+    if (length(triplet_results) > 0) {
+      return(list(
+        success = TRUE, 
+        n_triplets = length(triplet_results),
+        results = rbindlist(triplet_results, fill = TRUE)
+      ))
+    } else {
+      return(list(success = FALSE, reason = "no_convergence"))
+    }
   }
   
   ###########
-  # Filtrado y selección aleatoria de los tripletes a ajustar
+  # Procesamiento de resultados del lote
   ###########
   
-  trip_counts <- unique(triplets_perm[, .(drugA, drugB, meddra, safetyreportid)])[
-    , .N, by = .(drugA, drugB, meddra)
-  ]
-  candidate_triplets <- trip_counts[N >= min_reports_triplet]
+  # filtrado de errores
+  batch_results_clean <- Filter(function(x) !inherits(x, "error"), batch_results)
   
-  if (nrow(candidate_triplets) == 0) {
-    rm(permuted_pool, triplets_perm, trip_counts)
-    gc(verbose = FALSE)
-    failed_attempts <- failed_attempts + 1
-    next
-  }
+  # conteo de éxitos y fallos
+  batch_successes <- sum(sapply(batch_results_clean, function(x) x$success))
+  batch_failures <- length(batch_results_clean) - batch_successes
   
-  n_to_sample <- min(nrow(candidate_triplets), max_triplets_per_permutation)
-  selected_triplets <- candidate_triplets[sample(.N, n_to_sample)]
+  permutation_attempt <- end_perm
+  failed_attempts <- failed_attempts + batch_failures
   
-  ###########
-  # Reintroducción de los tripletes a copia del dataset para ajustar
-  ###########
+  # extraigo y guardo resultados exitosos
+  successful_results <- Filter(function(x) x$success, batch_results_clean)
   
-  ade_modified <- tryCatch({
-    reintroduce_permuted_reports(ade_raw_dt, permuted_pool)
-  }, error = function(e) {
-    message(sprintf(" error %s", e$message))
-    NULL
-  })
-  
-  if (is.null(ade_modified) || nrow(ade_modified) == 0) {
-    rm(permuted_pool, triplets_perm, trip_counts, candidate_triplets, selected_triplets)
-    gc(verbose = FALSE)
-    failed_attempts <- failed_attempts + 1
-    next
-  }
-  
-  ###########
-  # Validación de tripletes seleccionados (para que tenga requisitos mínimos para que modelo converja)
-  ###########
-  
-  reports_by_drug <- ade_modified[!is.na(atc_concept_id), 
-                                  .(reports = list(unique(safetyreportid))), 
-                                  by = atc_concept_id]
-  setkey(reports_by_drug, atc_concept_id)
-  
-  reports_by_event <- ade_modified[!is.na(meddra_concept_id), 
-                                   .(reports = list(unique(safetyreportid))), 
-                                   by = meddra_concept_id]
-  setkey(reports_by_event, meddra_concept_id)
-  
-  validation_results <- selected_triplets[, {
-    rA <- reports_by_drug[.(drugA), reports][[1]]
-    rB <- reports_by_drug[.(drugB), reports][[1]]
-    rE <- reports_by_event[.(meddra), reports][[1]]
+  if (length(successful_results) > 0) {
     
-    n_coadmin <- if (!is.null(rA) && !is.null(rB)) {
-      length(intersect(rA, rB))
-    } else 0
+    batch_triplets <- sum(sapply(successful_results, function(x) x$n_triplets))
     
-    n_events <- if (!is.null(rE)) length(rE) else 0
+    # combino resultados del lote
+    batch_data <- rbindlist(lapply(successful_results, function(x) x$results), fill = TRUE)
     
-    data.table(
-      drugA, drugB, meddra,
-      valid_gam = (n_coadmin >= 3 && n_events >= 5)
-    )
-  }, by = .I]
-  
-  valid_triplets <- validation_results[valid_gam == TRUE]
-
-  }
-  
-  ###########
-  # Ajuste secuencial de modelo
-  ###########
-  
-  n_valid <- nrow(valid_triplets)
-  n_successful_gams <- 0
-  
-  for (ti in seq_len(n_valid)) {
+    # guardo archivo temporal de lote para no colapsar memoria
+    batch_file <- paste0(output_dir, "batch_", sprintf("%04d", batch), ".csv")
+    fwrite(batch_data, batch_file)
+    batch_files <- c(batch_files, batch_file)
     
-    rowt <- valid_triplets[ti]
+    triplets_collected <- triplets_collected + batch_triplets
     
-    model_res <- tryCatch({
-      fit_differential_gam(
-    drugA_id = rowt$drugA,
-    drugB_id = rowt$drugB,
-    event_id = rowt$meddra,
-    ade_data = ade_modified,
-    spline_individuales = spline_individuales,
-    include_sex = include_sex,
-    nichd_spline = nichd_spline,
-    include_stage_sex = include_stage_sex,
-    bs_type = bs_type,
-    select = select,
-    k_spline = k_spline)
-    }, error = function(e) list(success = FALSE))
-    
-    if (!model_res$success) next
-    
-    if (any(is.na(model_res$log_ior)) || 
-        any(is.infinite(model_res$log_ior)) ||
-        any(abs(model_res$log_ior) > 20)) next
-    
-    # guardo resultados
-    result_dt <- data.table(
-      drugA = rowt$drugA,
-      drugB = rowt$drugB,
-      meddra = rowt$meddra,
-      stage = 1:7,
-      log_lower90 = model_res$log_ior_lower90,
-      log_ior = model_res$log_ior,
-      permutation = permutation_attempt,
-      spline_individuales = spline_individuales,
-      include_sex = include_sex,
-      nichd_spline = nichd_spline,
-      include_stage_sex = include_stage_sex,
-      k_spline = k_spline,
-      bs_type = bs_type,
-      select = select,
-      formula_used = if(model_res$success) model_res$formula_used else NA_character_
-    )
-    
-    all_results[[length(all_results) + 1]] <- result_dt
-    n_successful_gams <- n_successful_gams + 1
-  }
-  
-  if (n_successful_gams > 0) {
-    triplets_collected <- triplets_collected + n_successful_gams
-    
-    message(sprintf("     %d/%d ajustes exitosos | total: %d/%d (%.1f%%)",
-                    n_successful_gams, n_valid,
+    message(sprintf("  Lote completado: %d/%d exitosos | Total: %d/%d tripletes (%.1f%%)",
+                    batch_successes, length(batch_perms),
                     triplets_collected, target_total_triplets,
                     100 * triplets_collected / target_total_triplets))
+    message(sprintf("  Guardado: %s (%d filas)", basename(batch_file), nrow(batch_data)))
+    
   } else {
-    message("  Error ningun modelo esta convergiendo")
-    failed_attempts <- failed_attempts + 1
+    message(sprintf("  Lote completado: 0/%d exitosos", length(batch_perms)))
   }
   
-  ###########
-  # Limpieza de memoria
-  ###########
+  # Limpieza de memoria después de cada lote
+  rm(batch_results, batch_results_clean, successful_results)
+  if (exists("batch_data")) rm(batch_data)
+  gc(full = TRUE)
   
-  rm(permuted_pool, triplets_perm, trip_counts, candidate_triplets,
-     selected_triplets, ade_modified, reports_by_drug, reports_by_event,
-     validation_results, valid_triplets)
-  gc(verbose = FALSE)
-  
-  # Libero memoria cada 10 permutaciones
-  if (permutation_attempt %% 10 == 0) {
-    gc(full = TRUE)
-    Sys.sleep(1)  # Pausa para estabilidad
-  }
-  
-  # checkpoint cada 50 permutaciones
-  if (permutation_attempt %% 50 == 0 && triplets_collected > 0) {
-    message(sprintf("\n  Guardado de resultados parciales"))
-    checkpoint_data <- rbindlist(all_results, fill = TRUE)
-    fwrite(checkpoint_data, 
-           paste0(output_dir, "null_distribution_checkpoint.csv"))
-    message(sprintf("  guardados %d tripletes", nrow(checkpoint_data) / 7))
-  }
+  # pausa para estabilidad del sistema
+  Sys.sleep(2)
 }
+
+# Cerrar cluster
+stopCluster(cl)
 
 ################################################################################
 # Resultados
 ################################################################################
-
 
 message(sprintf("total de permutaciones: %d", permutation_attempt))
 message(sprintf("permutaciones exitosas: %d", permutation_attempt - failed_attempts))
@@ -353,10 +418,32 @@ message(sprintf("Objetivo: %d (%.1f%% completado)",
                 target_total_triplets,
                 100 * triplets_collected / target_total_triplets))
 
-null_all <- rbindlist(all_results, fill = TRUE)
+null_all <- rbindlist(lapply(batch_files, fread), fill = TRUE)
 message(sprintf("Total de observaciones: %d", nrow(null_all)))
 
-rm(all_results)
+
+# Leer en chunks para evitar saturar memoria
+chunk_size <- 10  # Leer 10 archivos a la vez
+n_chunks <- ceiling(length(batch_files) / chunk_size)
+
+null_all_chunks <- list()
+
+for (chunk in 1:n_chunks) {
+  
+  start_idx <- (chunk - 1) * chunk_size + 1
+  end_idx <- min(chunk * chunk_size, length(batch_files))
+  chunk_files <- batch_files[start_idx:end_idx]
+  
+  chunk_data <- rbindlist(lapply(chunk_files, fread), fill = TRUE)
+  null_all_chunks[[chunk]] <- chunk_data
+  
+  rm(chunk_data)
+  gc()
+}
+
+# combino todos los chunks
+null_all <- rbindlist(null_all_chunks, fill = TRUE)
+rm(null_all_chunks)
 gc(full = TRUE)
 
 ################################################################################
@@ -380,7 +467,6 @@ message(sprintf(" outliers removidos: %.1f%%", pct_removed))
 ################################################################################
 # Calculo de umbrales
 ################################################################################
-
 
 null_thresholds <- null_cleaned[, .(
   threshold_p90 = quantile(log_lower90, 0.90, na.rm = TRUE),
@@ -414,4 +500,5 @@ execution_summary <- data.table(
             100 * (permutation_attempt - failed_attempts) / permutation_attempt)
 )
 fwrite(execution_summary, paste0(output_dir, "execution_summary.csv"))
+
 
