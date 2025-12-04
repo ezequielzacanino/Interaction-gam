@@ -29,7 +29,7 @@ Este repositorio contiene los scripts utilizados para la validación de modelos 
 
 **Controles Positivos:**
 - Armado de tripletes con requisitos mínimos (10 reportes conjuntos)
-- Selección aleatoria de 500 tripletes como candidatos
+- Selección aleatoria de 750 tripletes como candidatos
 - Inyección de señal con dinámica ontogénica simulada (increase, decrease, plateau, inverse-plateau, uniform)
 - Fold-changes muestreados de distribución exponencial (λ = 0.75)
 - Ajustado de positivos inyectados
@@ -49,7 +49,7 @@ siendo e_j = P(A) + P(B) - P(A)×P(B)
 
 - Pool aleatorio de 100,000 reportes
 - Permutación estratificada por etapa de desarrollo (rompe asociación droga-evento)
-- Generación de ~2,500 tripletes permutados
+- Generación de ~5000 tripletes permutados
 - Cálculo de percentiles (P90, P95, P99) del IC90 inferior por etapa
 
 ### 3. Criterio de Detección 
@@ -78,31 +78,9 @@ Donde:
 - P₀₁: Prob(evento | DrogaB sola)
 - P₀₀: Prob(evento | ninguna)
 
-### Parámetros
 
-**En `01_augmentation.R`:**
-```r
-n_pos <- 500                    # Número de controles positivos
-n_neg <- 2500                   # Número de controles negativos
-lambda_fc <- 0.75               # Parámetro para fold-changes
-min_reports_triplet <- 20       # Mínimo de reportes por triplete
-```
+### Parámetros para ajuste de fórmula
 
-**En `02_nulldistribution.R`:**
-```r
-target_total_triplets <- 2500   # Objetivo de tripletes nulos
-perm_events <- TRUE             # Permutar eventos
-perm_drugs <- FALSE             # Permutar drogas
-```
-
-**En `032_validation_param.R`:**
-```r
-PERCENTILE_LEVEL <- "p95"       # Umbral: "p90", "p95", "p99"
-```
-
-### Ajuste de Fórmula GAM
-
-Parámetros
 ```r
 spline_individuales <- FALSE    # Splines para efectos individuales
 include_sex <- FALSE            # Incluir sexo como covariable
