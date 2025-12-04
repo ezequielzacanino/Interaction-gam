@@ -982,6 +982,142 @@ calculate_validation_metrics <- function(signal_by_triplet) {
   )
 }
 
+################################################################################
+# Cálculo de IOR clásico (sin modelo)
+################################################################################
+
+# Calcula IOR clásico usando tablas 2x2 por etapa
+#
+# parámetros:
+# drugA_id: id droga A (ATC concept_id)
+# drugB_id: id droga B (ATC concept_id)
+# event_id: id del evento adverso (MedDRA concept_id)
+# ade_data: data.table con dataset (puede ser aumentado)
+# 
+# return: Lista con stage, ior_classic, ior_classic_lower90, ior_classic_upper90
+# 
+# Implementación:
+# Para cada etapa j:
+# 1. Construye tabla 2x2:
+#    - a: evento + coadmin
+#    - b: sin evento + coadmin
+#    - c: evento + sin coadmin
+#    - d: sin evento + sin coadmin
+# 2. OR_11 = (a/b) / (c/d) = ad/bc
+# 3. OR_10 = reportes con A solo
+# 4. OR_01 = reportes con B solo
+# 5. OR_00 = reportes sin A ni B
+# 6. IOR = (OR_11 × OR_00) / (OR_10 × OR_01)
+# 7. IC90% usando método de Woolf (log scale)
+
+calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
+  
+  # Identificación de reportes
+  reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
+  reportes_droga_b <- unique(ade_data[atc_concept_id == drugB_id, safetyreportid])
+  reportes_ea <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
+  
+  # Dataset único por reporte con exposiciones
+  datos_unicos <- unique(ade_data[, .(safetyreportid, nichd, nichd_num)])
+  datos_unicos[, ea_ocurrio := as.integer(safetyreportid %in% reportes_ea)]
+  datos_unicos[, droga_a := as.integer(safetyreportid %in% reportes_droga_a)]
+  datos_unicos[, droga_b := as.integer(safetyreportid %in% reportes_droga_b)]
+  
+  # Cálculo por etapa
+  resultados_por_etapa <- datos_unicos[, {
+    
+    # Tabla 2x2 para cada combinación de exposición
+    # Grupo 11: A + B (coadministración)
+    n_11_evento <- sum(droga_a == 1 & droga_b == 1 & ea_ocurrio == 1)
+    n_11_no_evento <- sum(droga_a == 1 & droga_b == 1 & ea_ocurrio == 0)
+    
+    # Grupo 10: solo A
+    n_10_evento <- sum(droga_a == 1 & droga_b == 0 & ea_ocurrio == 1)
+    n_10_no_evento <- sum(droga_a == 1 & droga_b == 0 & ea_ocurrio == 0)
+    
+    # Grupo 01: solo B
+    n_01_evento <- sum(droga_a == 0 & droga_b == 1 & ea_ocurrio == 1)
+    n_01_no_evento <- sum(droga_a == 0 & droga_b == 1 & ea_ocurrio == 0)
+    
+    # Grupo 00: ni A ni B
+    n_00_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 1)
+    n_00_no_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 0)
+    
+    # corrección de continuidad por si hay ceros
+    correccion <- 0.5
+    aplica_correccion <- any(c(n_11_evento, n_11_no_evento, n_10_evento, 
+                                n_10_no_evento, n_01_evento, n_01_no_evento,
+                                n_00_evento, n_00_no_evento) == 0)
+    
+    if (aplica_correccion) {
+      n_11_evento <- n_11_evento + correccion
+      n_11_no_evento <- n_11_no_evento + correccion
+      n_10_evento <- n_10_evento + correccion
+      n_10_no_evento <- n_10_no_evento + correccion
+      n_01_evento <- n_01_evento + correccion
+      n_01_no_evento <- n_01_no_evento + correccion
+      n_00_evento <- n_00_evento + correccion
+      n_00_no_evento <- n_00_no_evento + correccion
+    }
+    
+    # calculo de OR para cada grupo
+    or_11 <- (n_11_evento / n_11_no_evento) / (n_00_evento / n_00_no_evento)
+    or_10 <- (n_10_evento / n_10_no_evento) / (n_00_evento / n_00_no_evento)
+    or_01 <- (n_01_evento / n_01_no_evento) / (n_00_evento / n_00_no_evento)
+    or_00 <- 1  # por definición
+    
+    # calculo de IOR
+    ior_val <- (or_11 * or_00) / (or_10 * or_01)
+    log_ior <- log(ior_val)
+    
+    # Varianza en escala log (método de Woolf)
+    # var(log(IOR)) = 1/a + 1/b + 1/c + 1/d para cada OR involucrado
+    var_log_or_11 <- (1/n_11_evento + 1/n_11_no_evento + 
+                      1/n_00_evento + 1/n_00_no_evento)
+    var_log_or_10 <- (1/n_10_evento + 1/n_10_no_evento + 
+                      1/n_00_evento + 1/n_00_no_evento)
+    var_log_or_01 <- (1/n_01_evento + 1/n_01_no_evento + 
+                      1/n_00_evento + 1/n_00_no_evento)
+    
+    # varianza del log(IOR) = var(log(OR_11)) + var(log(OR_10)) + var(log(OR_01))
+    var_log_ior <- var_log_or_11 + var_log_or_10 + var_log_or_01
+    se_log_ior <- sqrt(var_log_ior)
+    
+    # IC90 en escala log
+    z90 <- qnorm(0.95)
+    log_ior_lower90 <- log_ior - z90 * se_log_ior
+    log_ior_upper90 <- log_ior + z90 * se_log_ior
+    
+    # IOR en escala original
+    ior_lower90 <- exp(log_ior_lower90)
+    ior_upper90 <- exp(log_ior_upper90)
+    
+    data.table(
+      stage = nichd_num[1],
+      ior_classic = ior_val,
+      log_ior_classic = log_ior,
+      ior_classic_lower90 = ior_lower90,
+      ior_classic_upper90 = ior_upper90,
+      log_ior_classic_lower90 = log_ior_lower90,
+      log_ior_classic_upper90 = log_ior_upper90,
+      se_log_ior_classic = se_log_ior,
+      # datos diagnósticos
+      n_11_evento = n_11_evento - ifelse(aplica_correccion, correccion, 0),
+      n_11_total = n_11_evento + n_11_no_evento - 
+                   ifelse(aplica_correccion, 2*correccion, 0),
+      continuity_correction = aplica_correccion
+    )
+    
+  }, by = nichd_num]
+  
+  # Ordenar por etapa
+  setorder(resultados_por_etapa, nichd_num)
+  
+  return(list(
+    success = TRUE,
+    results_by_stage = resultados_por_etapa
+  ))
+}
 
 
 
