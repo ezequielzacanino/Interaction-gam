@@ -237,11 +237,12 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   # Combino con eventos existentes
   target_reports[, e_final := pmax(e_old, e_new)]
   
-  # 7- Inyección
-  to_inject <- target_reports[e_old == 0 & e_final == 1]
+  # 7- marco reportes a inyectar
+  # Identifico reportes que DEBERÍAN tener el evento (simulado)
+  reports_to_mark <- target_reports[e_old == 0 & e_final == 1, safetyreportid]
   
   # CHEQUEO: si falla inyección
-  if (nrow(to_inject) == 0) {
+  if (nrow(reports_to_mark) == 0) {
     return(list(
       success = FALSE, 
       n_injected = 0, 
@@ -261,17 +262,16 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     ))
   }
   
-  # 8- Nuevas filas
-  new_rows <- to_inject[, .(
-    safetyreportid,
-    atc_concept_id = NA_integer_,
-    meddra_concept_id = event_id,
-    nichd,
-    nichd_num,
-    simulated_flag = TRUE
-  )]
-  
-  ade_aug <- rbindlist(list(ade_aug, new_rows), use.names = TRUE, fill = TRUE)
+  # 8- marco reportes que ahora tienen el evento simulado (inyectados)
+  ade_aug[
+    safetyreportid %in% reports_to_mark,
+    `:=`(
+      simulated_event = TRUE,
+      simulated_meddra = event_id,
+      simulated_drugA = drugA_id,
+      simulated_drugB = drugB_id
+    )
+  ]
   
   # 9- CHEQUEO: diagnósticos
   diagnostics <- list(
@@ -295,16 +295,19 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     n_without_event = nrow(target_reports[e_old == 0]),
     
     # Resultados de inyección
-    n_new_events = nrow(to_inject),
-    injection_rate = nrow(to_inject) / nrow(target_reports[e_old == 0]),
+    n_new_events = length(reports_to_mark),
+    injection_rate = length(reports_to_mark) / nrow(target_reports[e_old == 0]),
     
     # Distribución por etapa
-    injection_by_stage = to_inject[, .N, by = nichd_num]
+    injection_by_stage = target_reports[
+      safetyreportid %in% reports_to_mark, 
+      .N, 
+      by = nichd_num
   )
   
   return(list(
     success = TRUE,
-    n_injected = nrow(new_rows),
+    n_injected = nrow(reports_to_mark),
     n_coadmin = length(reports_both),
     ade_aug = ade_aug,
     diagnostics = diagnostics
@@ -356,7 +359,20 @@ fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data,
   
   reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
   reportes_droga_b <- unique(ade_data[atc_concept_id == drugB_id, safetyreportid])
-  reportes_ea <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
+  reportes_ea_real <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
+  
+  # agrego reportes simulados "flaggeados" en función de inyección
+  reportes_ea_sim <- if("simulated_event" %in% names(ade_data)) {
+    unique(ade_data[
+      simulated_event == TRUE & simulated_meddra == event_id,
+      safetyreportid
+    ])
+  } else {
+    integer(0)
+  }
+
+  # Combinar reales + simulados
+  reportes_ea <- union(reportes_ea_real, reportes_ea_sim)
   
   ###########
   # 2- Construcción de dataset para ajustar
@@ -1118,6 +1134,7 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     results_by_stage = resultados_por_etapa
   ))
 }
+
 
 
 
