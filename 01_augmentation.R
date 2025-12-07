@@ -815,6 +815,216 @@ summary_stats <- data.table(
 print(summary_stats)
 fwrite(summary_stats, paste0(output_dir, "summary_statistics.csv"))
 
+################################################################################
+# Detección de dinámicas 
+################################################################################
+
+# Para ver si el modelo efectivamente detecta la forma de la dinámica inyectada
+
+# Para no correr todo el análisis de 0 
+#ruta_pos_results <- paste0("./results/", suffix, "/augmentation_results/positive_triplets_results.rds")
+#positives_scores <- readRDS(ruta_pos_results)
+
+# positivos exitosos
+pos_for_dynamics <- positives_scores[
+  model_success == TRUE & 
+  injection_success == TRUE & 
+  !is.na(dynamic)
+]
+
+# Expando datos por etapa
+pos_dynamics_expanded <- pos_for_dynamics[, {
+  stages <- unlist(stage)
+  log_iors <- unlist(log_ior)
+  
+  # valido longitudes
+  n <- min(length(stages), length(log_iors))
+  
+  if (n > 0) {
+    data.table(
+      stage = stages[1:n],
+      log_ior = log_iors[1:n]
+    )
+  } else {
+    data.table()
+  }
+}, by = .(triplet_id, dynamic, fold_change)]
+
+# agrego stage_name después de expandir
+pos_dynamics_expanded[, stage_name := niveles_nichd[stage]]
+
+
+# calculo el promedio de log-IOR, clasificado por dinámica y etapa
+dynamics_summary <- pos_dynamics_expanded[, .(
+  mean_log_ior = mean(log_ior, na.rm = TRUE),
+  sd_log_ior = sd(log_ior, na.rm = TRUE),
+  n_triplets = uniqueN(triplet_id)
+), by = .(dynamic, stage)]
+
+# agregar stage_name a summary
+dynamics_summary[, stage_name := niveles_nichd[stage]]
+
+# Tomo uniform como baseline para calcular la diferencia
+uniform_baseline <- dynamics_summary[dynamic == "uniform", .(
+  stage, 
+  baseline_log_ior = mean_log_ior
+)]
+
+# diferencias vs uniform
+dynamics_diff <- merge(
+  dynamics_summary[dynamic != "uniform"],
+  uniform_baseline,
+  by = "stage",
+  all.x = TRUE
+)
+
+dynamics_diff[, log_ior_diff := mean_log_ior - baseline_log_ior]
+
+message("\nDiferencias promedio vs uniform:")
+print(dynamics_diff[order(dynamic, stage), .(
+  dynamic, 
+  stage_name, 
+  mean_log_ior, 
+  baseline = baseline_log_ior,
+  difference = log_ior_diff
+)])
+
+################################################################################
+# Bootstrap para intervalos de confianza
+################################################################################
+
+n_boot <- 100
+
+# función de bootstrap por dinámica y etapa
+bootstrap_dynamic_diff <- function(data, dynamic_type, stage_num, n_boot = 100) {
+  
+  # Datos para la dinámica objetivo
+  target_data <- data[dynamic == dynamic_type & stage == stage_num, log_ior]
+  
+  # Datos para uniform (baseline)
+  uniform_data <- data[dynamic == "uniform" & stage == stage_num, log_ior]
+  
+  if (length(target_data) < 3 || length(uniform_data) < 3) {
+    return(data.table(
+      mean_diff = NA_real_,
+      ci_lower = NA_real_,
+      ci_upper = NA_real_
+    ))
+  }
+  
+  # Bootstrap
+  boot_diffs <- replicate(n_boot, {
+    target_sample <- sample(target_data, replace = TRUE)
+    uniform_sample <- sample(uniform_data, replace = TRUE)
+    mean(target_sample) - mean(uniform_sample)
+  })
+  
+  data.table(
+    mean_diff = mean(boot_diffs, na.rm = TRUE),
+    ci_lower = quantile(boot_diffs, 0.025, na.rm = TRUE),
+    ci_upper = quantile(boot_diffs, 0.975, na.rm = TRUE)
+  )
+}
+
+# aplico bootstrap a todas las combinaciones
+dynamics_nonuniform <- unique(pos_dynamics_expanded[dynamic != "uniform", dynamic])
+stages <- 1:7
+
+bootstrap_results <- rbindlist(pblapply(dynamics_nonuniform, function(dyn) {
+  rbindlist(lapply(stages, function(s) {
+    boot_res <- bootstrap_dynamic_diff(pos_dynamics_expanded, dyn, s, n_boot)
+    cbind(data.table(dynamic = dyn, stage = s), boot_res)
+  }))
+}))
+
+# merge con datos principales
+dynamics_with_ci <- merge(
+  dynamics_diff,
+  bootstrap_results,
+  by = c("dynamic", "stage"),
+  all.x = TRUE
+)
+
+dynamics_with_ci[, stage_name := factor(stage_name, levels = niveles_nichd)]
+
+fwrite(dynamics_with_ci, paste0(output_dir, "dynamics_recovery_analysis.csv"))
+
+message("\nEstadísticas de recuperación por dinámica:")
+recovery_stats <- dynamics_with_ci[, .(
+  mean_difference = mean(log_ior_diff, na.rm = TRUE),
+  max_difference = max(abs(log_ior_diff), na.rm = TRUE),
+  stages_significant = sum(ci_lower > 0 | ci_upper < 0, na.rm = TRUE)
+), by = dynamic]
+
+print(recovery_stats)
+
+################################################################################
+# Gráfico
+################################################################################
+
+# colores para dinámicas
+dynamic_colors <- c(
+  "increase" = "#E41A1C",
+  "decrease" = "#377EB8", 
+  "plateau" = "#4DAF4A",
+  "inverse_plateau" = "#984EA3"
+)
+
+# Diferencias vs uniform con intervalo de confianza
+p_dynamics_diff <- ggplot(
+  dynamics_with_ci[!is.na(mean_diff)],
+  aes(x = stage_name, y = log_ior_diff, color = dynamic, group = dynamic)
+) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.8) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_ribbon(
+    aes(ymin = ci_lower, ymax = ci_upper, fill = dynamic),
+    alpha = 0.2,
+    color = NA
+  ) +
+  scale_color_manual(
+    values = dynamic_colors,
+    labels = c(
+      "increase" = "Creciente",
+      "decrease" = "Decreciente",
+      "plateau" = "Meseta",
+      "inverse_plateau" = "Valle"
+    )
+  ) +
+  scale_fill_manual(
+    values = dynamic_colors,
+    labels = c(
+      "increase" = "Creciente",
+      "decrease" = "Decreciente",
+      "plateau" = "Meseta",
+      "inverse_plateau" = "Valle"
+    )
+  ) +
+  labs(
+    title = "Recuperación de patrones dinámicos inyectados",
+    subtitle = sprintf("Diferencia vs dinámica uniform (IC 95%%, %d bootstraps)", n_boot),
+    x = "Etapa del desarrollo",
+    y = "Δ Log-IOR (vs uniform)",
+    color = "Dinámica inyectada",
+    fill = "Dinámica inyectada"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+
+ggsave(
+  paste0(output_dir, "fig_dynamics_recovery.png"),
+  p_dynamics_diff,
+  width = 12,
+  height = 8,
+  dpi = 300
+)
+
+print(p_dynamics_diff)
+
+
 
 
 
