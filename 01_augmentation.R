@@ -133,7 +133,22 @@ trip_counts <- unique(triplets_dt[, .(drugA, drugB, meddra, safetyreportid)])[
 candidatos_pos <- trip_counts[N >= min_reports_triplet]
 message("Tripletes candidatos: ", nrow(candidatos_pos))
 
-positivos_sel <- candidatos_pos[sample(.N, n_pos)]
+# máximo de eventos distintos permitidos por par de drogas
+max_events_per_pair_neg <- 3  
+
+# muestreo estratificado:
+# Para cada combinación (drugA, drugB), si tiene más de X eventos
+candidatos_pos <- candidatos_pos[, 
+    .SD[sample(.N, min(.N, max_events_per_pair))], 
+    by = .(drugA, drugB)
+]
+message("Tripletes candidatos (diversificados): ", nrow(candidatos_pos))
+
+# Verificación de cantidad suficiente de candidatos
+n_pos_final <- min(n_pos, nrow(candidatos_pos))
+
+
+positivos_sel <- candidatos_pos[sample(.N, n_pos_final)]
 
 
 ################################################################################
@@ -1023,6 +1038,7 @@ ggsave(
 )
 
 print(p_dynamics_diff)
+
 
 
 
