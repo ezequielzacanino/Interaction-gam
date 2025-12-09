@@ -241,15 +241,15 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   # Identifico reportes que DEBERÍAN tener el evento (simulado)
   reports_to_mark <- target_reports[e_old == 0 & e_final == 1, safetyreportid]
   
-  # CHEQUEO: si falla inyección
-  if (nrow(reports_to_mark) == 0) {
+  if (length(reports_to_mark) == 0) {
     return(list(
-      success = FALSE, 
-      n_injected = 0, 
+      success = TRUE,  
+      n_injected = 0,
       n_coadmin = length(reports_both),
-      ade_aug = NULL,
-      message = "Sin generación de eventos nuevos",
-      diagnostics = list(                      # reviso que paso del cálculo de prob final salió mal
+      ade_aug = ade_aug,  
+      message = "Probabilidad de inyección baja. 0 eventos nuevos",
+      diagnostics = list(
+        low_probability_injection = TRUE,
         e_j = e_j,
         t_ij = t_ij,
         fold_change = fold_change,
@@ -1134,6 +1134,7 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     results_by_stage = resultados_por_etapa
   ))
 }
+
 
 
 
