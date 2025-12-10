@@ -1059,23 +1059,6 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     n_00_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 1)
     n_00_no_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 0)
     
-    # corrección de continuidad por si hay ceros
-    correccion <- 0.5
-    aplica_correccion <- any(c(n_11_evento, n_11_no_evento, n_10_evento, 
-                                n_10_no_evento, n_01_evento, n_01_no_evento,
-                                n_00_evento, n_00_no_evento) == 0)
-    
-    if (aplica_correccion) {
-      n_11_evento <- n_11_evento + correccion
-      n_11_no_evento <- n_11_no_evento + correccion
-      n_10_evento <- n_10_evento + correccion
-      n_10_no_evento <- n_10_no_evento + correccion
-      n_01_evento <- n_01_evento + correccion
-      n_01_no_evento <- n_01_no_evento + correccion
-      n_00_evento <- n_00_evento + correccion
-      n_00_no_evento <- n_00_no_evento + correccion
-    }
-    
     # calculo de OR para cada grupo
     or_11 <- (n_11_evento / n_11_no_evento) / (n_00_evento / n_00_no_evento)
     or_10 <- (n_10_evento / n_10_no_evento) / (n_00_evento / n_00_no_evento)
@@ -1117,11 +1100,9 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
       log_ior_classic_lower90 = log_ior_lower90,
       log_ior_classic_upper90 = log_ior_upper90,
       se_log_ior_classic = se_log_ior,
-      # datos diagnósticos
-      n_11_evento = n_11_evento - ifelse(aplica_correccion, correccion, 0),
-      n_11_total = n_11_evento + n_11_no_evento - 
-                   ifelse(aplica_correccion, 2*correccion, 0),
-      continuity_correction = aplica_correccion
+      # Datos diagnósticos
+      n_11_evento = n_11_evento,
+      n_11_total = n_11_evento + n_11_no_evento
     )
     
   }, by = nichd_num]
@@ -1134,6 +1115,7 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     results_by_stage = resultados_por_etapa
   ))
 }
+
 
 
 
