@@ -209,7 +209,8 @@ positives_results <- foreach(
   .options.snow = opts,
   .verbose = FALSE
 ) %dopar% {
-  
+
+  set.seed(9427 + i)
   rowt <- pos_meta[i]
   
   ###########
@@ -542,7 +543,7 @@ for (batch in 1:n_batches) {
     .errorhandling = "pass",
     .verbose = FALSE
   ) %dopar% {
-    
+    set.seed(9427 + idx)
     rowt <- selected_negatives[idx]
     
     ###########
@@ -1038,6 +1039,7 @@ ggsave(
 )
 
 print(p_dynamics_diff)
+
 
 
 
