@@ -38,7 +38,15 @@ bs_type <- "cs"
 select <- TRUE
 method <- "fREML" 
 
-output_dir <- "./augmentation_results/"
+suffix <- paste0(
+  if (spline_individuales) "si" else "",
+  if (include_sex) "s" else "",
+  if (include_stage_sex) "ss" else "",
+  if (nichd_spline) "ns" else "",
+  bs_type
+)
+
+output_dir <- paste0("./results/", suffix, "/augmentation_results/")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 source("giangreco_theme.R")
 theme_set(theme_giangreco())
@@ -1118,6 +1126,7 @@ ggsave(
 )
 
 print(p_dynamics_diff)
+
 
 
 
