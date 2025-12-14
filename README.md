@@ -69,12 +69,12 @@ Una señal es **positiva** si al menos una etapa cumple:
 - Cálculo paralelo de TPR/FNR/poder usando foreach y doParallel
 
 **Identificación de ADEs Powered:**
-- Filtrado de ADEs que alcanzan 80% poder para ambos métodos
+- Filtrado de ADEs que alcanzan 80% poder para ambos métodos (IOR Clásico y GAM)
 - Exportación de tabla de umbrales y lista de ADEs detectables
 
 **Análisis de Sensibilidad con Reducción de Reportes:**
 - Para ADEs específicos, iteración por etapas NICHD
-- Aplicación de percentiles de reducción de reportes (0-100%)
+- Aplicación de percentiles de reducción de reportes (0-90%)
 - Recálculo de scores (IOR Clásico, GAM) bajo cada escenario
 - Cálculo de power/FPR/PPV/NPV/AUC con intervalos de confianza bootstrap
 

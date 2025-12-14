@@ -89,59 +89,6 @@ message(sprintf("Datos positivos cargados: %d tripletos", nrow(positive_meta)))
 message(sprintf("Datos negativos cargados: %d tripletos", nrow(negative_meta)))
 
 ################################################################################
-# Función para calcular PRR (Proportional Reporting Ratio)
-################################################################################
-
-calculate_prr_score <- function(drugA_id, drugB_id, event_id, ade_data) {
-  
-  # Identificar reportes
-  reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
-  reportes_droga_b <- unique(ade_data[atc_concept_id == drugB_id, safetyreportid])
-  reportes_ea <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
-  reportes_coadmin <- intersect(reportes_droga_a, reportes_droga_b)
-  
-  if (length(reportes_coadmin) == 0) {
-    return(list(prr = NA_real_, prr_lower90 = NA_real_, success = FALSE))
-  }
-  
-  # Tabla 2x2 para PRR
-  # a: evento + coadmin, b: sin evento + coadmin
-  # c: evento sin coadmin, d: sin evento sin coadmin
-  
-  a <- sum(reportes_coadmin %in% reportes_ea)
-  b <- length(reportes_coadmin) - a
-  
-  # reportes sin coadmin (usando todos los reportes restantes)
-  reportes_sin_coadmin <- setdiff(unique(ade_data$safetyreportid), reportes_coadmin)
-  c <- sum(reportes_sin_coadmin %in% reportes_ea)
-  d <- length(reportes_sin_coadmin) - c
-  
-  # Validaciones
-  if (b == 0 || d == 0 || a == 0 || c == 0) {
-    return(list(prr = NA_real_, prr_lower90 = NA_real_, success = FALSE))
-  }
-  
-  # Calcular PRR
-  prr <- (a/b) / (c/d)
-  
-  # Calcular IC90% usando método de Woolf
-  var_log_prr <- 1/a + 1/b + 1/c + 1/d
-  se_log_prr <- sqrt(var_log_prr)
-  z90 <- qnorm(0.95)
-  
-  log_prr <- log(prr)
-  log_prr_lower90 <- log_prr - z90 * se_log_prr
-  prr_lower90 <- exp(log_prr_lower90)
-  
-  return(list(
-    prr = prr,
-    prr_lower90 = prr_lower90,
-    success = TRUE,
-    table = data.table(a = a, b = b, c = c, d = d)
-  ))
-}
-
-################################################################################
 # Función para calcular poder por etapa y método
 ################################################################################
 
