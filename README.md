@@ -36,7 +36,7 @@ Este repositorio contiene los scripts utilizados para la validación de modelos 
 - Ajustado de positivos inyectados
 
 **Controles Negativos:**
-- Selección aleatoria de 10,000 tripletes no inyectados (mutuamente exclusivos con positivos)
+- Selección aleatoria de 2500 tripletes no inyectados (mutuamente exclusivos con positivos) con características de reporte similares a positivos
 - Ajustado de negativos 
 
 **Fórmula de inyección:**
@@ -50,7 +50,7 @@ siendo e_j = P(A) + P(B) - P(A)×P(B)
 
 - Pool aleatorio de 100,000 reportes
 - Permutación estratificada por etapa de desarrollo (rompe asociación droga-evento)
-- Generación de ~5000 tripletes permutados
+- Generación de 10000 tripletes permutados
 - Cálculo de percentiles (P90, P95, P99) del IC90 inferior por etapa
 
 ### 3. Criterio de Detección 
