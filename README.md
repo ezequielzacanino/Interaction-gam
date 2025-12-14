@@ -17,10 +17,11 @@ Este repositorio contiene los scripts utilizados para la validación de modelos 
 ## Workflow
 
 ```
-00_functions.R              # Funciones del pipeline
-01_augmentation.R           # Generación de datos semisintéticos
-02_nulldistribution.R       # Construcción de distribución nula
-032_validation_param.R      # Validación y métricas de rendimiento
+00_functions.R               # Funciones del pipeline
+01_augmentation.R            # Generación de datos semisintéticos
+02_nulldistribution.R        # Construcción de distribución nula
+032_validation_param.R       # Validación y métricas de rendimiento
+033_validation_comparison.R  # Comparación entre IOR clásico y GAM
 ```
 
 ## Metodología
