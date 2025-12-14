@@ -29,11 +29,12 @@ Este repositorio contiene los scripts utilizados para la validación de modelos 
 ### 1. Generación de Datos Semisintéticos (`01_augmentation.R`)
 
 **Controles Positivos:**
-- Armado de tripletes con requisitos mínimos (10 reportes conjuntos)
-- Selección aleatoria de 750 tripletes como candidatos
-- Inyección de señal con dinámica ontogénica simulada (increase, decrease, plateau, inverse-plateau, uniform)
-- Fold-changes muestreados de distribución exponencial (λ = 0.75)
-- Ajustado de positivos inyectados
+- Armado de tripletes con requisitos mínimos (n reportes conjuntos)
+- Selección aleatoria de 500 tripletes como candidatos
+- Inyección de señal con dinámicas ontogénicas simuladas (increase, decrease, plateau, inverse-plateau, uniform)
+- Asignación de fold-changes muestreados de distribución exponencial (λ = 0.75)
+- Ajustado de positivos inyectados en copia independiente de dataset original
+- 5 sets de 500 tripletes positivos 
 
 **Controles Negativos:**
 - Selección aleatoria de 2500 tripletes no inyectados (mutuamente exclusivos con positivos) con características de reporte similares a positivos
