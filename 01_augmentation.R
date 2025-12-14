@@ -189,7 +189,7 @@ clusterExport(cl, c("inject_signal", "fit_differential_gam",
                     "ade_raw_dt", "niveles_nichd", "dynamic_fun", "z90",
                     "pos_meta", "normalize_triplet_result", "spline_individuales", "include_sex",
                     "include_stage_sex", "k_spline", "nichd_spline", "bs_type", "select",
-                    "output_dir"), 
+                    "output_dir", "calculate_classic_ior"), 
               envir = environment())
 
 clusterEvalQ(cl, {
@@ -307,6 +307,21 @@ positives_results <- foreach(
     list(success = FALSE, n_events = 0, n_coadmin = inj_result$n_coadmin,
          error_msg = paste("Error en modelo:", e$message))        # Chequeo por si falla
   })
+
+  ###########
+  # Cálculo de IOR clásico
+  ###########
+  
+  classic_res <- tryCatch({
+    calculate_classic_ior(
+      drugA_id = rowt$drugA,
+      drugB_id = rowt$drugB,
+      event_id = rowt$meddra,
+      ade_data = inj_result$ade_aug
+    )
+  }, error = function(e) {
+    list(success = FALSE)
+  })
   
   ###########
   # Guardo diagnósticos y resultados antes de borrar inj_result
@@ -343,6 +358,11 @@ positives_results <- foreach(
       log_ior = list(rep(NA_real_, 7)),
       log_ior_lower90 = list(rep(NA_real_, 7)),
       ior_values = list(rep(NA_real_, 7)),
+      # campos con los resultados del IOR clásico
+      classic_success = classic_res$success,
+      log_ior_classic = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic) else list(rep(NA_real_, 7)),
+      log_ior_classic_lower90 = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic_lower90) else list(rep(NA_real_, 7)),
+      ior_classic = if(classic_res$success) list(classic_res$results_by_stage$ior_classic) else list(rep(NA_real_, 7)),
       diagnostics = diag_data,
       spline_individuales = spline_individuales,
       nichd_spline = nichd_spline,
@@ -384,6 +404,10 @@ positives_results <- foreach(
     log_ior = list(model_res$log_ior),
     log_ior_lower90 = list(model_res$log_ior_lower90),
     ior_values = list(model_res$ior_values),
+    classic_success = classic_res$success,
+    log_ior_classic = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic) else list(rep(NA_real_, 7)),
+    log_ior_classic_lower90 = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic_lower90) else list(rep(NA_real_, 7)),
+    ior_classic = if(classic_res$success) list(classic_res$results_by_stage$ior_classic) else list(rep(NA_real_, 7)),
     diagnostics = diag_data,
     spline_individuales = spline_individuales,
     nichd_spline = nichd_spline,
@@ -558,7 +582,8 @@ for (batch in 1:n_batches) {
   
   clusterExport(cl, c("fit_differential_gam", "ade_raw_dt", "z90",
                       "selected_negatives", "normalize_triplet_result", "spline_individuales", "include_sex",
-                      "include_stage_sex", "k_spline", "nichd_spline", "bs_type", "select", "method"), 
+                      "include_stage_sex", "k_spline", "nichd_spline", "bs_type", "select", "method",
+                      "calculate_classic_ior"), 
                 envir = environment())
   
   clusterEvalQ(cl, {
@@ -598,6 +623,21 @@ for (batch in 1:n_batches) {
            error_msg = paste("Error:", e$message))            # Chequeo por si falla
     })
     
+    ###########
+    # cálculo de IOR clásico
+    ###########
+  
+    classic_res <- tryCatch({
+      calculate_classic_ior(
+        drugA_id = rowt$drugA,
+        drugB_id = rowt$drugB,
+        event_id = rowt$meddra,
+        ade_data = ade_raw_dt
+      )
+    }, error = function(e) {
+      list(success = FALSE)
+    })
+    
     if (!model_res$success) {
       result <- data.table(
         triplet_id = rowt$triplet_id,
@@ -618,7 +658,11 @@ for (batch in 1:n_batches) {
         log_ior_lower90 = list(rep(NA_real_, 7)),
         ior_values = list(rep(NA_real_, 7)),
         formula_used = if(model_res$success) model_res$formula_used else NA_character_ ,
-        message = inj_result$message
+        message = inj_result$message,
+        classic_success = classic_res$success,
+        log_ior_classic = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic) else list(rep(NA_real_, 7)),
+        log_ior_classic_lower90 = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic_lower90) else list(rep(NA_real_, 7)),
+        ior_classic = if(classic_res$success) list(classic_res$results_by_stage$ior_classic) else list(rep(NA_real_, 7))
       )
       
       rm(model_res)
@@ -647,7 +691,12 @@ for (batch in 1:n_batches) {
       stage = list(1:7),
       log_ior = list(model_res$log_ior),
       log_ior_lower90 = list(model_res$log_ior_lower90),
-      ior_values = list(model_res$ior_values)
+      ior_values = list(model_res$ior_values),
+      # resultados de IOR clásico
+      classic_success = classic_res$success,
+      log_ior_classic = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic) else list(rep(NA_real_, 7)),
+      log_ior_classic_lower90 = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic_lower90) else list(rep(NA_real_, 7)),
+      ior_classic = if(classic_res$success) list(classic_res$results_by_stage$ior_classic) else list(rep(NA_real_, 7))
     )
     
     rm(model_res)
@@ -1069,6 +1118,7 @@ ggsave(
 )
 
 print(p_dynamics_diff)
+
 
 
 
