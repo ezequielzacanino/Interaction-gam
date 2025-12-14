@@ -69,14 +69,14 @@ message(paste(rep("=", 80), collapse = ""))
 
 # Archivos utilizados
 ruta_ade_raw <- "./ade_raw.csv"
-ruta_pos_results <- "./augmentation_results/positive_triplets_results.rds"
-ruta_neg_results <- "./augmentation_results/negative_triplets_results.rds"
-ruta_pos_meta <- "./augmentation_results/positive_triplets_metadata.csv"
-ruta_neg_meta <- "./augmentation_results/negative_triplets_metadata.csv"
+ruta_pos_results <- paste0("./results/", suffix, "/augmentation_results/positive_triplets_results.rds")
+ruta_neg_results <- paste0("./results/", suffix, "/augmentation_results/negative_triplets_results.rds")
+ruta_pos_meta <- paste0("./results/", suffix, "/augmentation_results/positive_triplets_metadata.csv")
+ruta_neg_meta <- paste0("./results/", suffix, "/augmentation_results/negative_triplets_metadata.csv")
 
 # Archivos de distribución nula
-ruta_null_dist <- "./null_distribution_results/null_distribution.csv"
-ruta_null_thresh <- "./null_distribution_results/null_thresholds.csv"
+ruta_null_dist <- paste0("./results/", suffix, "/null_distribution_results/null_distribution.csv")
+ruta_null_thresh <- paste0("./results/", suffix, "/null_distribution_results/null_thresholds.csv")
 
 # Parámetros
 n_bootstrap <- 1000
@@ -93,7 +93,7 @@ suffix <- paste0(
 )
 
 # Directorio de salida con identificador de percentil
-output_dir <- paste0("./results/validation_results_", PERCENTILE_LEVEL, "_", suffix, "/")
+output_dir <- paste0("./results/", suffix, "/validation_results_", PERCENTILE_LEVEL, "/")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 ################################################################################
@@ -572,6 +572,7 @@ writeLines(executive_summary, paste0(output_dir, "EXECUTIVE_SUMMARY.txt"))
 # Guardado
 fwrite(signal_by_triplet, paste0(output_dir, "signal_classification.csv"))
 fwrite(all_expanded, paste0(output_dir, "all_expanded_with_criteria.csv"))
+
 
 
 
