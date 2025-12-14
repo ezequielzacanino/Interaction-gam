@@ -18,9 +18,10 @@ Este repositorio contiene los scripts utilizados para la validación de modelos 
 
 ```
 00_functions.R              # Funciones del pipeline
-01_augmentation.R           # Generación de datos semisintéticos
-02_nulldistribution.R       # Construcción de distribución nula
-032_validation_param.R      # Validación y métricas de rendimiento
+01_augmentation.R           # Generación de datos semisintéticos (incluye IOR clásico)
+02_nulldistribution_final.R # Construcción de distribución nula
+032_validation_param.R      # Validación con criterio doble (null model)
+033_power_analysis_opus45.R # Análisis de poder + validación comparativa (GAM vs IOR clásico)
 ```
 
 ## Metodología
