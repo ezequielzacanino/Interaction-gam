@@ -367,6 +367,7 @@ Matriz de Confusión - Clásico:
 Verdad Positivo  %4d     %4d
        Negativo  %4d     %4d
 
+Etapas con mejora (Sensibilidad): %d de %d
 Fecha: %s
 ================================================================================
 ",
@@ -391,3 +392,4 @@ format(Sys.time(), "%Y-%m-%d %H:%M:%S")
 
 cat(executive_summary)
 writeLines(executive_summary, paste0(output_dir, "resumen_comparacion.txt"))
+
