@@ -1,8 +1,0 @@
-parameter,value
-perm_events,1
-perm_drugs,1
-max_triplets_per_permutation,20
-target_total_triplets,500
-total_permutations,25
-triplets_collected,500
-success_rate,100

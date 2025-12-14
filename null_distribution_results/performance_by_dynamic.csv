@@ -1,6 +1,0 @@
-dynamic,n_total,n_detected,detection_rate
-uniform,87,24,0.275862068965517
-increase,96,60,0.625
-decrease,83,35,0.421686746987952
-inverse_plateau,96,55,0.572916666666667
-plateau,88,42,0.477272727272727
