@@ -22,7 +22,7 @@ ruta_ade_raw <- "./ade_raw.csv"
 # Parámetros para inyección
 min_reports_triplet <- 10
 n_pos <- 500
-n_neg <- 2500
+n_neg <- 5000
 lambda_fc <- 0.75
 dinamicas <- c("uniform","increase","decrease","plateau","inverse_plateau")
 n_cores <- max(1, floor(detectCores() * 0.75)) 
@@ -51,12 +51,9 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 source("giangreco_theme.R")
 theme_set(theme_giangreco())
 
-
-
 ################################################################################
 # Carga de datos
 ################################################################################
-
 
 ade_raw_dt <- fread(ruta_ade_raw)
 
@@ -155,30 +152,36 @@ message("Tripletes candidatos (diversificados): ", nrow(candidatos_pos))
 # Verificación de cantidad suficiente de candidatos
 n_pos_final <- min(n_pos, nrow(candidatos_pos))
 
-
 positivos_sel <- candidatos_pos[sample(.N, n_pos_final)]
-
 
 ################################################################################
 # Selección de positivos
 ################################################################################
+# Cambio: ahora a todos los tripletes se les inyectan todas las dinámicas
+# aumenta considerablemente el tamaño posible, facilita análisis poshoc de potencia
+# cada uno se ajusta en una copia independiente del dataset 
 
-# Asignación de dinámicas y fold-changes
-n_per_dynamic <- ceiling(nrow(positivos_sel) / length(dinamicas))
-din_for_triplets <- rep(dinamicas, length.out = nrow(positivos_sel))
+# info base de tripletes únicos
+pos_meta_base <- positivos_sel[, .(drugA, drugB, meddra, N)]
+pos_meta_base[, base_triplet_id := 1:.N]
 
-fold_changes <- sample_fold_change(nrow(positivos_sel), lambda = lambda_fc)
+# cada triplete base se combina con cada dinámica
+pos_meta <- pos_meta_base[, {
+  data.table(
+    drugA = drugA,
+    drugB = drugB,
+    meddra = meddra,
+    N = N,
+    base_triplet_id = base_triplet_id,
+    dynamic = dinamicas
+  )
+}, by = base_triplet_id]
 
-pos_meta <- positivos_sel[, .(drugA, drugB, meddra, N)]
-pos_meta[, `:=`(
-  dynamic = din_for_triplets,
-  fold_change = fold_changes,
-  triplet_id = 1:.N
-)]
+# fold_changes únicos para cada combinación
+pos_meta[, fold_change := sample_fold_change(.N, lambda = lambda_fc)]
 
-# Flageo los 30 tripletes con mayor cantidad de reportes para utilizarlos después en análisis de escasez
-top30_ids <- pos_meta[order(-N)][1:min(.N, 30), triplet_id]
-pos_meta[, is_top30 := triplet_id %in% top30_ids]
+# Crear triplet_id único para cada combinación triplete-dinámica
+pos_meta[, triplet_id := 1:.N]
 
 fwrite(pos_meta, paste0(output_dir, "positive_triplets_metadata.csv"))
 
@@ -440,10 +443,7 @@ positives_results_clean <- Filter(function(x) !inherits(x, "error"), positives_r
 positives_results_normalized <- lapply(positives_results_clean, normalize_triplet_result)
 positives_scores <- rbindlist(positives_results_normalized, fill = TRUE)
 
-
 pos_success <- positives_scores[injection_success == TRUE]
-
-
 
 ################################################################################
 # Guardado de resultados
@@ -486,11 +486,9 @@ message("\nPositivos exitosos: ",
         sum(positives_scores$model_success & positives_scores$injection_success, na.rm = TRUE))
 
 
-
 ################################################################################
 # Selección de datos negativos
 ################################################################################
-
 # Son excluyentes de positivos, pero distintas combinaciones de las MISMAS drogas y eventos
 # Si coincidiese un triplete elegido para negativo con uno positivo, que justo se inyectó con un fold-change muy pequeño
 # Habría demasiado solapamiento
@@ -560,14 +558,12 @@ fwrite(selected_negatives, paste0(output_dir, "negative_triplets_metadata.csv"))
 
 message("Seleccionados ", nrow(selected_negatives), " negativos")
 
-
-
+                                  
 ################################################################################
 # Procesado de negativos
 ################################################################################
 
 message("Procesado de negativos: ", nrow(selected_negatives), " tripletes")
-
 
 # Proceso negativos en lotes para evitar que crashee 
 batch_size <- 100
@@ -751,13 +747,11 @@ gc()
 message("\nNegativos exitosos: ", sum(negatives_scores$model_success, na.rm = TRUE))
 
 
-
 ################################################################################
 # Creación de pool nulo 
 ################################################################################
 
 # Es por muestreo aleatorio simple, total después se permutan 
-
 
 # Parámetros de muestreo
 n_null_reports <- 100000  
@@ -995,7 +989,6 @@ print(dynamics_diff[order(dynamic, stage), .(
 ################################################################################
 # Bootstrap para intervalos de confianza
 ################################################################################
-
 n_boot <- 100
 
 # función de bootstrap por dinámica y etapa
@@ -1126,13 +1119,4 @@ ggsave(
 )
 
 print(p_dynamics_diff)
-
-
-
-
-
-
-
-
-
 
