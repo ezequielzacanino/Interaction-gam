@@ -459,15 +459,38 @@ message("\nPositivos exitosos: ",
 # Selección de datos negativos
 ################################################################################
 
-# Son excluyentes de positivos
+# Son excluyentes de positivos, pero distintas combinaciones de las MISMAS drogas y eventos
 # Si coincidiese un triplete elegido para negativo con uno positivo, que justo se inyectó con un fold-change muy pequeño
 # Habría demasiado solapamiento
 
 # No hay garantía de que los negativos sean realmente negativos
-# Son simplemente elegidos al azar
 # La "garantía" es que la incidencia de interacciones farmacológicas sinérgicas es "baja"
 # Por lo que, probabilisticamente, agarrar tripletes al azar tiene muchisimas más chances de agarrar negativos
+# además, ahora que son distintas combinacioens de MISMAS drogas y eventos, se puede comparar inyección vs no inyectado
+# con similares características de reporte
 
+# extraigo las drogas y eventos usados en positivos
+drugs_from_pos <- unique(c(pos_meta$drugA, pos_meta$drugB))
+events_from_pos <- unique(pos_meta$meddra)
+
+# producto cartesiano de todas las combinaciones posibles
+all_combinations <- CJ(
+  drugA = drugs_from_pos,
+  drugB = drugs_from_pos,
+  meddra = events_from_pos
+)
+
+# aseguro orden: drugA <= drugB
+all_combinations[, `:=`(
+  drugA_ord = pmin(drugA, drugB),
+  drugB_ord = pmax(drugA, drugB)
+)]
+all_combinations[, `:=`(drugA = drugA_ord, drugB = drugB_ord)]
+all_combinations[, `:=`(drugA_ord = NULL, drugB_ord = NULL)]
+
+# elimino pares donde drugA = drugB
+all_combinations <- all_combinations[drugA != drugB]
+                              
 # identificador único para tripletes positivos
 pos_triplet_ids <- paste(
   pmin(pos_meta$drugA, pos_meta$drugB),
@@ -476,11 +499,20 @@ pos_triplet_ids <- paste(
   sep = "_"
 )
 
-# Identifico tripletes candidatos que NO estén en positivos
-candidatos_neg <- candidatos_pos[
-  !paste(pmin(drugA, drugB), pmax(drugA, drugB), meddra, sep = "_") %in% pos_triplet_ids
-]
+# excluyo positivos del producto cartesiano
+all_combinations[, triplet_id := paste(drugA, drugB, meddra, sep = "_")]
+candidatos_neg_full <- all_combinations[!triplet_id %in% pos_triplet_ids]
+                                  
+# mantengo tripletes que EXISTEN en ade_raw
+candidatos_neg <- merge(
+  candidatos_neg_full[, .(drugA, drugB, meddra)],
+  trip_counts,
+  by = c("drugA", "drugB", "meddra"),
+  all.x = FALSE  # inner join solo los que existen en ambos
+)
 
+# filtro número mínimo
+candidatos_neg <- candidatos_neg[N >= min_reports_triplet]
 message("Tripletes negativos disponibles: ", nrow(candidatos_neg))
 
 # Muestrear negativos
@@ -501,8 +533,6 @@ message("Seleccionados ", nrow(selected_negatives), " negativos")
 ################################################################################
 # Procesado de negativos
 ################################################################################
-
-
 
 message("Procesado de negativos: ", nrow(selected_negatives), " tripletes")
 
@@ -1039,6 +1069,7 @@ ggsave(
 )
 
 print(p_dynamics_diff)
+
 
 
 
