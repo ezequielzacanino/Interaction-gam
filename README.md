@@ -20,6 +20,7 @@ Este repositorio contiene los scripts utilizados para la validación de modelos 
 00_functions.R               # Funciones del pipeline
 01_augmentation.R            # Generación de datos semisintéticos
 02_nulldistribution.R        # Construcción de distribución nula
+03_power_analysis.R          # Análisis de poder con reducción de reportes
 032_validation_param.R       # Validación y métricas de rendimiento
 033_validation_comparison.R  # Comparación entre IOR clásico y GAM
 ```
@@ -59,7 +60,30 @@ Una señal es **positiva** si al menos una etapa cumple:
 1. **Criterio nominal**: IC90 inferior del log-IOR > 0
 2. **Criterio null model**: IC90 inferior del log-IOR > Percentil de distribución nula (seleccionable)
 
-### 4. Modelo GAM
+### 4. Análisis de Poder (`03_power_analysis.R`)
+
+**Análisis de Poder por Etapa:**
+- Cálculo de poder estadístico para métodos IOR Clásico y GAM
+- Matrices de clase (high/low reporting rates) por etapa y tipo de spike-in
+- Grillas de combinaciones entre tamaño de efecto y número de reportes
+- Cálculo paralelo de TPR/FNR/poder usando foreach y doParallel
+
+**Identificación de ADEs Powered:**
+- Filtrado de ADEs que alcanzan 80% poder para ambos métodos
+- Exportación de tabla de umbrales y lista de ADEs detectables
+
+**Análisis de Sensibilidad con Reducción de Reportes:**
+- Para ADEs específicos, iteración por etapas NICHD
+- Aplicación de percentiles de reducción de reportes (0-100%)
+- Recálculo de scores (IOR Clásico, GAM) bajo cada escenario
+- Cálculo de power/FPR/PPV/NPV/AUC con intervalos de confianza bootstrap
+
+**Archivos de Salida:**
+- `power_analysis_results.csv`: Resultados completos del análisis de poder
+- `power_analysis_powered_ades.csv`: ADEs con poder ≥ 80%
+- `dynamics_sensitivity_analysis_drug_report_results.csv`: Análisis de sensibilidad
+
+### 5. Modelo GAM
 
 **Fórmula de base:**
 ```r

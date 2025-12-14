@@ -303,7 +303,7 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
       safetyreportid %in% reports_to_mark, 
       .N, 
       by = nichd_num
-  )
+          ])
   
   return(list(
     success = TRUE,
