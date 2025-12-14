@@ -789,7 +789,6 @@ reintroduce_permuted_reports <- function(ade_original, permuted_pool) {
 }
 
 
-
 ################################################################################
 # Funciones de utilidad
 ################################################################################
@@ -835,140 +834,91 @@ normalize_triplet_result <- function(result) {
 }
 
 
-# Convierte columnas tipo string separadas por coma a listas numéricas
+################################################################################
+# Funciones de expansión y clasificación
+################################################################################
+# Expande datos de formato ancho (1 fila = 1 triplete) a largo (7 filas = 7 etapas)
+# clasifica señales según criterios de detección por método
 #
-# Parámetro:
-# x: vector de strings con valores separados por coma
+# Parámetros:
+# dt: data.table con tripletes en formato ancho (columnas tipo lista)
+# method_col: nombre de columna con log_ior_lower90 a usar ("log_ior_lower90" o "log_ior_classic_lower90")
+# type_label: identificador del método ("GAM" o "Clásico")
 # 
-# Cuando uso csv donde las columnas de lista fueron colapsadas
-parse_list_column <- function(x) {
+# Return:
+# data.table expandido con clasificaciones de señal por etapa y método
+# 
+# Implementación:
+# -Expande listas por etapa (stage, log_ior_lower90)
+# -Aplica umbrales de distribución nula
+# -Clasifica señales con criterio diferencial por método:
+#  GAM: doble criterio (nominal + null model)
+#  IOR clásico: solo criterio nominal (IC90% > 0)
+
+
+expand_and_classify <- function(dt, method_col, type_label) {
   
-  if (is.character(x)) {
-    sapply(x, function(s) {
-      if (is.na(s) || s == "") return(list(numeric(0)))
-      list(as.numeric(strsplit(s, ",")[[1]]))
-    }, USE.NAMES = FALSE)
-  } else {
-    x
+  by_cols <- c("triplet_id", "type")
+  if ("dynamic" %in% names(dt)) by_cols <- c(by_cols, "dynamic")
+  if ("fold_change" %in% names(dt)) by_cols <- c(by_cols, "fold_change")
+  
+  expanded <- dt[, {
+    data.table(
+      stage = unlist(stage),
+      log_ior_lower90 = unlist(get(method_col))
+    )
+  }, by = by_cols]
+  
+  if (!"dynamic" %in% names(expanded)) {
+    expanded[, dynamic := NA_character_]
   }
-}
-
-
-# Expande columnas tipo lista a formato largo (una fila por etapa)
-#
-# Parámetrps:
-# dt: data.table con columnas tipo lista
-# id_cols: vector con nombres de columnas identificadoras
-# list_cols: Vector con nombres de columnas tipo lista a expandir
-#
-# Transforma datos de formato ancho (1 fila = 1 triplete, 7 valores por columna) a formato largo (7 filas por triplete, 1 valor por fila)
-
-expand_list_columns <- function(dt, id_cols, list_cols) {
+  if (!"fold_change" %in% names(expanded)) {
+    expanded[, fold_change := NA_real_]
+  }
   
-  dt[, {
-    list_data <- lapply(list_cols, function(col) {
-      vals <- get(col)
-      if (is.list(vals)) unlist(vals) else vals
-    })
+  expanded <- merge(
+    expanded,
+    null_thresholds[, .(stage, threshold)],
+    by = "stage", all.x = TRUE
+  )
+  
+  expanded[, `:=`(
+    nominal_sig = log_ior_lower90 > 0,
+    nullmodel_sig = log_ior_lower90 > threshold,
     
-    n_vals <- length(list_data[[1]])
-    
-    if (n_vals == 0) {
-      data.table()
+    # condicional según el método
+    signal_detected = if (type_label == "Clásico") {
+      log_ior_lower90 > 0  # Solo criterio nominal para el IOR clásico
     } else {
-      result <- setNames(list_data, list_cols)
-      result$stage <- 1:n_vals
-      as.data.table(result)
-    }
-  }, by = id_cols]
+      (log_ior_lower90 > 0) & (log_ior_lower90 > threshold) # doble umbral para GAM
+    },
+    
+    method = type_label
+  )]
+  
+  return(expanded)
 }
-
-
-################################################################################
-# Funciones para validación y clasificación
-################################################################################
-
-# Calcula señal de interacción siguiendo criterio Giangreco
-#
-# @param model_result Lista resultado de fit_differential_gam
-# @param null_thresholds Vector numérico con umbrales Pc99 por etapa (length 7)
-# @return Lista con: success, signal_detected, n_stages_significant, métricas
-# 
-# @details
-# Criterio de señal Giangreco (doble umbral):
-# 1. NOMINAL: IC90 del log(IOR) > 0 (significancia estadística básica)
-# 2. NULL MODEL: IC90 del log(IOR) > umbral Pc99 (distribución nula)
-# 
-# Una señal es detectada si AL MENOS UNA etapa cumple ambos criterios
-calculate_interaction_signal <- function(model_result, null_thresholds) {
-  
-  if (!model_result$success) {
-    return(list(
-      success = FALSE, 
-      signal_detected = FALSE, 
-      n_stages_significant = 0,
-      max_ior = NA, 
-      ior_values = rep(NA, 7), 
-      log_ior_lower90 = rep(NA, 7)
-    ))
-  }
-  
-  log_ior_lower90 <- model_result$log_ior_lower90
-  ior_values <- model_result$ior_values
-  
-  # Criterio 1: Nominal (IC90 > 0)
-  nominal_significant <- log_ior_lower90 > 0
-  
-  # Criterio 2: Null model (IC90 > Pc99)
-  nullmodel_significant <- sapply(1:7, function(i) {
-    log_ior_lower90[i] > null_thresholds[i]
-  })
-  
-  # Detección requiere AMBOS criterios en al menos una etapa
-  signal_detected <- any(nullmodel_significant)
-  
-  return(list(
-    success = TRUE,
-    signal_detected = signal_detected,
-    n_stages_significant = sum(nullmodel_significant),
-    max_ior = max(ior_values, na.rm = TRUE),
-    mean_ior = mean(ior_values, na.rm = TRUE),
-    ior_values = ior_values,
-    log_ior = model_result$log_ior,
-    log_ior_lower90 = log_ior_lower90,
-    log_ior_se = model_result$log_ior_se,
-    nullmodel_by_stage = nullmodel_significant,
-    nominal_by_stage = nominal_significant,
-    model_aic = model_result$model_aic,
-    model_deviance = model_result$model_deviance
-  ))
-}
-
-
+                   
 ################################################################################
 # Funciones de métricas de validación
 ################################################################################
-
 # Calcula matriz de confusión y métricas derivadas
 #
-# usa signal_by_triplet (data.table con: triplet_id, type, signal_detected)
-# Da lista con: confusion_matrix, metricas (sensibilidad, especificidad)
+# usa expand_and_classify (data.table "expanded" con: triplet_id, signal_detected)
+# Da data.table con método y métricas (sensibilidad, especificidad, ppv, npv, f1, precisión)
 
-calculate_validation_metrics <- function(signal_by_triplet) {
+calculate_metrics <- function(expanded_data, method_name) {
   
-  confusion <- signal_by_triplet[, .(
-    tp = sum(type == "positive" & signal_detected == TRUE),
-    fn = sum(type == "positive" & signal_detected == FALSE),
-    fp = sum(type == "negative" & signal_detected == TRUE),
-    tn = sum(type == "negative" & signal_detected == FALSE)
-  )]
+  by_triplet <- expanded_data[, .(
+    signal_detected = any(signal_detected, na.rm = TRUE),
+    n_stages_sig = sum(signal_detected, na.rm = TRUE)
+  ), by = .(triplet_id, true_label)]
   
-  tp <- confusion$tp
-  fn <- confusion$fn
-  fp <- confusion$fp
-  tn <- confusion$tn
+  tp <- sum(by_triplet$signal_detected == TRUE & by_triplet$true_label == 1)
+  fn <- sum(by_triplet$signal_detected == FALSE & by_triplet$true_label == 1)
+  fp <- sum(by_triplet$signal_detected == TRUE & by_triplet$true_label == 0)
+  tn <- sum(by_triplet$signal_detected == FALSE & by_triplet$true_label == 0)
   
-  # Métricas 
   sensitivity <- tp / (tp + fn)
   specificity <- tn / (tn + fp)
   ppv <- tp / (tp + fp)
@@ -976,27 +926,18 @@ calculate_validation_metrics <- function(signal_by_triplet) {
   accuracy <- (tp + tn) / (tp + tn + fp + fn)
   f1_score <- 2 * (ppv * sensitivity) / (ppv + sensitivity)
   
-  # Maneja NaN cuando no hay casos
-  if (is.nan(f1_score)) f1_score <- 0
-  if (is.nan(ppv)) ppv <- 0
-  if (is.nan(npv)) npv <- 0
-  
-  list(
-    confusion_matrix = confusion,
-    metrics = data.table(
-      metric = c("Sensitivity", "Specificity", "PPV", "NPV", 
-                 "Accuracy", "F1_Score"),
-      value = c(sensitivity, specificity, ppv, npv, accuracy, f1_score)
-    ),
-    tp = tp, fn = fn, fp = fp, tn = tn,
+  data.table(
+    method = method_name,
     sensitivity = sensitivity,
     specificity = specificity,
     ppv = ppv,
     npv = npv,
     accuracy = accuracy,
-    f1_score = f1_score
+    f1_score = f1_score,
+    tp = tp, fn = fn, fp = fp, tn = tn
   )
 }
+
 
 ################################################################################
 # Cálculo de IOR clásico (sin modelo)
@@ -1115,6 +1056,7 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     results_by_stage = resultados_por_etapa
   ))
 }
+
 
 
 
