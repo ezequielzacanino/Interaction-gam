@@ -18,6 +18,8 @@ setwd("D:/Bioestadística/gam-farmacovigilancia")
 source("00_functions.R", local = TRUE)
 
 ruta_ade_raw <- "./ade_raw.csv"
+ruta_drug_gene <- "./drug_gene.csv"
+ruta_drug_info <- "./drug.csv" 
 
 # Parámetros para inyección
 min_reports_triplet <- 10
@@ -65,10 +67,6 @@ if (include_sex) {
   cols_req <- c(cols_req, "sex")
 }
 
-# Proceso nichd
-ade_raw_dt[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
-ade_raw_dt[, nichd_num := as.integer(nichd)]
-
 # Proceso sex si está presente
 if (include_sex) {
   # Estandarizo valores
@@ -87,6 +85,68 @@ if (include_sex) {
 
 message(sprintf("Dataset %s filas", format(nrow(ade_raw_dt), big.mark = ",")))
 
+################################################################################
+# Preprocesamiento
+################################################################################
+
+# diccionario de drogas
+drug_info_original <- fread(ruta_drug_info)
+
+# chequeo de variable
+drug_info_original[, atc_concept_id := as.character(atc_concept_id)]
+
+# limpieza de nombre
+drug_info_original[, base_name := tolower(trimws(sub("[;,].*", "", atc_concept_name)))]
+
+# mapeo de nombres
+# si coincide nombre de base (ej propranolol; systemic = propranolol; topic)
+# se unifica atc_concept_id
+canonical_map <- drug_info_original[, .(
+  canonical_id = min(atc_concept_id)
+), by = base_name]
+
+# merge de id
+translation_table <- merge(
+  drug_info_original[, .(atc_concept_id, base_name)],
+  canonical_map,
+  by = "base_name"
+)
+
+# resultados de unificación
+cat(sprintf("IDs originales: %d\n", uniqueN(translation_table$atc_concept_id)))
+cat(sprintf("IDs únicos: %d\n", uniqueN(translation_table$canonical_id)))
+
+###########
+# Unificación de ids en dataset 
+###########
+
+ade_raw_dt[, atc_concept_id := as.character(atc_concept_id)]
+
+# merge con tabla de ids canónicos
+ade_raw_dt <- merge(
+  ade_raw_dt, 
+  translation_table[, .(atc_concept_id, canonical_id)], 
+  by = "atc_concept_id", 
+  all.x = TRUE
+)
+
+# Si atc_concept_id tiene otro id canónico, reemplaza
+ade_raw_dt[!is.na(canonical_id), atc_concept_id := canonical_id]
+ade_raw_dt[, canonical_id := NULL] # limpio columna auxiliar
+
+# Unificar ids crea filas duplicadas
+# antes --> 1 evento con propranolol podía tener 2 filas
+# ej: id 001 atc_concept_id 123 (propranolol; systemic), meddra id 456
+#     id 001 atc_concept_id 124 (propranolol; topical), meddra id 456
+# con ids canónicos, ambas filas se vuelven idénticas e introducen colinealidad, borro
+nrow_before <- nrow(ade_raw_dt)
+
+# unique de las columnas clave
+ade_raw_dt <- unique(ade_raw_dt, by = c("safetyreportid", "atc_concept_id", "meddra_concept_id"))
+
+# Proceso nichd
+ade_raw_dt[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
+ade_raw_dt[, nichd_num := as.integer(nichd)]
 
 ################################################################################
 # Construcción de tripletes candidatos
@@ -1119,4 +1179,5 @@ ggsave(
 )
 
 print(p_dynamics_diff)
+
 
