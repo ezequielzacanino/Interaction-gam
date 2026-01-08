@@ -462,6 +462,7 @@ positives_results <- foreach(
     N = model_res$n_events,
     dynamic = rowt$dynamic,
     fold_change = rowt$fold_change,
+    t_ij = diag_data[[1]]$t_ij,
     model_success = TRUE,
     injection_success = TRUE,
     n_injected = n_injected_val,
@@ -1179,5 +1180,6 @@ ggsave(
 )
 
 print(p_dynamics_diff)
+
 
 
