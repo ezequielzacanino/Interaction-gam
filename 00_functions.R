@@ -412,20 +412,6 @@ fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data,
   n_coadmin <- sum(datos_modelo$droga_ab)
   
   ###########
-  # 3- Requisitos mínimos (cantidad de reportes en conjunto y eventos)
-  ###########
-  
-  if (n_events < 5 || n_coadmin < 3) {
-    return(list(
-      success = FALSE,
-      n_events = n_events,
-      n_coadmin = n_coadmin,
-      message = sprintf("Datos insuficientes: %d eventos, %d coadmin", 
-                        n_events, n_coadmin)
-    ))
-  }
-  
-  ###########
   # 4- Construcción de fórmula con parámetros
   ###########
   
@@ -1056,6 +1042,7 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     results_by_stage = resultados_por_etapa
   ))
 }
+
 
 
 
