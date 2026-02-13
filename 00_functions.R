@@ -13,7 +13,134 @@ niveles_nichd <- c(
 
 Z90 <- qnorm(0.95)  # Cuantil 90% para intervalos de confianza
 
+################################################################################
+# Función para construir tripletes
+################################################################################
 
+# Genera tripletes (drugA, drugB, event) para un reporte individual
+#
+# Parámetros:
+# dr: vector ids de drogas en el reporte (atc_concept_id)
+# ev: vector ids de eventos en el reporte (meddra_concept_id)
+# rid: id del reporte (safetyreportid)
+# nichd_stage: etapa NICHD numérica del reporte
+# 
+# Return:
+# data.table con columnas: safetyreportid, drugA, drugB, meddra, nichd_num
+# 
+# Implementación
+# Genera todas las combinaciones de pares de drogas (si >= 2 drogas)
+# Cruza cada par con cada evento del reporte
+# Aplica orden: drugA <= drugB (para evitar duplicados por orden inverso)
+# Devuelve NULL si el reporte NO tiene >= 2 drogas o eventos
+
+make_triplets_per_report <- function(dr, ev, rid, nichd_stage) {
+  
+  if (length(dr) < 2 || length(ev) < 1) return(NULL)
+  
+  dr <- unique(dr)
+  ev <- unique(ev)
+  
+  # Genero combinaciones de pares de drogas
+  if (length(dr) == 2) {
+    combs <- matrix(dr, nrow = 1)
+  } else {
+    combs <- t(combn(dr, 2))
+  }
+  
+  # Orden: min primero
+  combs <- t(apply(combs, 1, function(x) c(min(x), max(x))))
+  
+  n_combs <- nrow(combs)
+  n_events <- length(ev)
+  
+  data.table(
+    safetyreportid = rid,
+    drugA = rep(combs[,1], times = n_events),
+    drugB = rep(combs[,2], times = n_events),
+    meddra = rep(ev, each = n_combs),
+    nichd_num = nichd_stage
+  )
+}
+
+################################################################################
+# Función de tamaño de efecto (fold-change)
+################################################################################
+
+# Muestrea fold-changes siguiendo distribución exponencial negativa
+#
+# parámetros:
+# n: Número de fold-changes a generar
+# lambda: parámetro de tasa para distribución exponencial (0.75)
+# 
+# return: vector numérico con fold-changes >= 1
+# 
+# Implementación:
+# - FC ~ 1 + Exp(λ = 0.75)
+# - rango típico: [1, 10] con sesgo a la derecha
+
+sample_fold_change <- function(n, lambda = 0.75) {
+  1 + rexp(n, rate = lambda)
+}
+
+################################################################################
+# Función auxiliar: calcular coadministración por etapa para un triplete
+################################################################################
+
+# Calcula la cantidad de reportes A+B por etapa para cada triplete
+# Permite calcular superset para método clásico
+# 
+# return:
+# n_coadmin_stage: número de reportes A+B para evento en etapa
+#
+# Implementación:
+# Identifica reportes A+B
+# Realiza conteo de reportes por etapa
+# Completa etapas sin reportes con 0
+
+coadmin_by_stage <- function(drugA, drugB, meddra, ade_data) {
+  
+  # reportes con cada droga
+  reports_A <- unique(ade_data[atc_concept_id == drugA, safetyreportid])
+  reports_B <- unique(ade_data[atc_concept_id == drugB, safetyreportid])
+  
+  # Reportes con ambas drogas (coadministración)
+  reports_AB <- intersect(reports_A, reports_B)
+  
+  if (length(reports_AB) == 0) {
+    # Si no hay coadministración, retornar estructura vacía
+    return(data.table(
+      nichd_num = 1:7,
+      nichd = niveles_nichd,
+      n_coadmin_stage = 0L
+    ))
+  }
+  
+  # etapa NICHD de cada reporte con coadministración
+  stage_counts <- unique(ade_data[
+    safetyreportid %in% reports_AB,
+    .(safetyreportid, nichd, nichd_num)
+  ])[, .N, by = .(nichd, nichd_num)]
+  
+  # ceros para etapas sin reportes
+  full_stages <- data.table(
+    nichd_num = 1:7,
+    nichd = niveles_nichd
+  )
+  
+  stage_counts <- merge(
+    full_stages,
+    stage_counts,
+    by = c("nichd_num", "nichd"),
+    all.x = TRUE
+  )
+  
+  stage_counts[is.na(N), N := 0L]
+  setnames(stage_counts, "N", "n_coadmin_stage")
+  
+  return(stage_counts[order(nichd_num)])
+}
+                   
 ################################################################################
 # Función de generación de dinámicas
 ################################################################################
@@ -62,28 +189,6 @@ dynamic_fun <- function(type, N = 7) {
     ))
   }
 }
-
-
-################################################################################
-# Función de tamaño de efecto (fold-change)
-################################################################################
-
-# Muestrea fold-changes siguiendo distribución exponencial negativa
-#
-# parámetros:
-# n: Número de fold-changes a generar
-# lambda: parámetro de tasa para distribución exponencial (0.75)
-# 
-# return: vector numérico con fold-changes >= 1
-# 
-# Implementación:
-# - FC ~ 1 + Exp(λ = 0.75)
-# - rango típico: [1, 10] con sesgo a la derecha
-
-sample_fold_change <- function(n, lambda = 0.75) {
-  1 + rexp(n, rate = lambda)
-}
-
 
 ################################################################################
 # Función de inyección de señales
@@ -160,30 +265,34 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   target_reports[, e_old := as.integer(safetyreportid %in% event_in_report)]
   
   # 3- Calculo tasa base (t_ij)
-  # cambio por probabilidad de la unión de eventos independientes
-  # Calcular tasas base individuales
-  p_baseA <- mean(reports_A %in% event_in_report)
-  p_baseB <- mean(reports_B %in% event_in_report)
+  reports_A_clean <- setdiff(reports_A, reports_AB)
+  reports_B_clean <- setdiff(reports_B, reports_AB)
+  p_baseA <- mean(reports_A_clean %in% event_in_report)
+  p_baseB <- mean(reports_B_clean %in% event_in_report)
+  p_base0 <- length(event_in_report) / length(unique(ade_raw_dt$safetyreportid))
 
+  # tener en cuenta que no son probabilidades, son odds, pero la extrapolación es válida si p <0.1  
+
+  # Existen diversos métodos para considerar tasa de base
+  # Todos se comportan distinto según el escenario
+
+  # - Método aditivo:
+  # consistente, genera IOR altos cuando riesgos individuales bajos + riesgo basal alto
   # e_j = P(evento | A ∪ B) asumiendo independencia
   # fórmula: P(A ∪ B) = P(A) + P(B) - P(A) × P(B)
+  # p_baseA + p_baseB - (p_baseA * p_baseB)
+
+  # - Método multiplicativo
+  # consistente, solo genera IOR altos cuando riesgo basal bajo + riesgos individuales altos
+  # tiene en cuenta todos los componentes (riesgos individuales y global)
+  # e_j = (p_A × p_B) / p_0 
+  # fórmula: P(A) × P(B) / P(0)
+  # (p_baseA * p_baseB) / p_base0
   e_j <- p_baseA + p_baseB - (p_baseA * p_baseB)
 
   # t_ij = fold_change * e_j 
   t_ij <- fold_change * e_j
   
-  # CHEQUEO: Validación de tasa base mínima  (revisar si saco o ajusto)
-  if (e_j < 0.001) {
-    return(list(
-      success = FALSE, 
-      n_injected = 0, 
-      n_coadmin = length(reports_both),
-      ade_aug = NULL,
-      message = sprintf("Tasa base muy baja: e_j = %.4f", e_j),
-      diagnostics = list(e_j = e_j, t_ij = t_ij, fold_change = fold_change)
-    ))
-  }
-
   # 4- Probabilidades por etapa 
   # bprobs = rep(tij, N)
   # dy = tanh(...) * tij  (la dinámica se escala por tij)
@@ -646,55 +755,6 @@ describe_model_config <- function(model_result) {
   paste(parts, collapse = " | ")
 }
 
-################################################################################
-# Función para construir tripletes
-################################################################################
-
-# Genera tripletes (drugA, drugB, event) para un reporte individual
-#
-# Parámetros:
-# dr: vector ids de drogas en el reporte (atc_concept_id)
-# ev: vector ids de eventos en el reporte (meddra_concept_id)
-# rid: id del reporte (safetyreportid)
-# nichd_stage: etapa NICHD numérica del reporte
-# 
-# Return:
-# data.table con columnas: safetyreportid, drugA, drugB, meddra, nichd_num
-# 
-# Implementación
-# Genera todas las combinaciones de pares de drogas (si >= 2 drogas)
-# Cruza cada par con cada evento del reporte
-# Aplica orden: drugA <= drugB (para evitar duplicados por orden inverso)
-# Devuelve NULL si el reporte NO tiene >= 2 drogas o eventos
-
-make_triplets_per_report <- function(dr, ev, rid, nichd_stage) {
-  
-  if (length(dr) < 2 || length(ev) < 1) return(NULL)
-  
-  dr <- unique(dr)
-  ev <- unique(ev)
-  
-  # Genero combinaciones de pares de drogas
-  if (length(dr) == 2) {
-    combs <- matrix(dr, nrow = 1)
-  } else {
-    combs <- t(combn(dr, 2))
-  }
-  
-  # Orden: min primero
-  combs <- t(apply(combs, 1, function(x) c(min(x), max(x))))
-  
-  n_combs <- nrow(combs)
-  n_events <- length(ev)
-  
-  data.table(
-    safetyreportid = rid,
-    drugA = rep(combs[,1], times = n_events),
-    drugB = rep(combs[,2], times = n_events),
-    meddra = rep(ev, each = n_combs),
-    nichd_num = nichd_stage
-  )
-}
 
 
 ################################################################################
@@ -1042,6 +1102,7 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     results_by_stage = resultados_por_etapa
   ))
 }
+
 
 
 
