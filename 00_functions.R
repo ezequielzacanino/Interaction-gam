@@ -1103,6 +1103,184 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
   ))
 }
 
+################################################################################
+# Cálculo de RERI clásico 
+################################################################################
+
+# Calcula RERI clásico usando tablas 2x2 por etapa
+#
+# Parámetros:
+# drugA_id: id droga A (ATC concept_id)
+# drugB_id: id droga B (ATC concept_id)
+# event_id: id del evento adverso (MedDRA concept_id)
+# ade_data: data.table con dataset (puede ser aumentado)
+# 
+# Return: Lista con success, results_by_stage (stage, RERI, RERI_lower90, RERI_upper90)
+# 
+# Implementación:
+# Para cada etapa j:
+# Construye tabla 2x2:
+# R11: riesgo con A+B
+# R10: riesgo con solo A
+# R01: riesgo con solo B
+# R00: riesgo sin A ni B (referencia)
+# RERI = R11 - R10 - R01 + R00
+# IC90% usando método delta (propagación de varianzas)
+# Varianza de cada riesgo: Var(R) = p(1-p)/n
+# 5Varianza de RERI: suma de varianzas (asumiendo independencia)
+
+calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
+  
+  # Identificación de reportes
+  reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
+  reportes_droga_b <- unique(ade_data[atc_concept_id == drugB_id, safetyreportid])
+  
+  # Reportes con el evento (reales)
+  reportes_ea_real <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
+  
+  # Reportes con evento simulado (si existen)
+  reportes_ea_sim <- if("simulated_event" %in% names(ade_data)) {
+    unique(ade_data[
+      simulated_event == TRUE & simulated_meddra == event_id,
+      safetyreportid
+    ])
+  } else {
+    integer(0)
+  }
+  
+  # Combinar reales + simulados
+  reportes_ea <- union(reportes_ea_real, reportes_ea_sim)
+  
+  # Dataset único por reporte con exposiciones
+  datos_unicos <- unique(ade_data[, .(safetyreportid, nichd, nichd_num)])
+  datos_unicos[, ea_ocurrio := as.integer(safetyreportid %in% reportes_ea)]
+  datos_unicos[, droga_a := as.integer(safetyreportid %in% reportes_droga_a)]
+  datos_unicos[, droga_b := as.integer(safetyreportid %in% reportes_droga_b)]
+  
+  # Cálculo por etapa
+  resultados_por_etapa <- datos_unicos[, {
+    
+    # Conteos para cada combinación de exposición
+    # Grupo 11: A + B (coadministración)
+    n_11_evento <- sum(droga_a == 1 & droga_b == 1 & ea_ocurrio == 1)
+    n_11_total <- sum(droga_a == 1 & droga_b == 1)
+    
+    # Grupo 10: solo A
+    n_10_evento <- sum(droga_a == 1 & droga_b == 0 & ea_ocurrio == 1)
+    n_10_total <- sum(droga_a == 1 & droga_b == 0)
+    
+    # Grupo 01: solo B
+    n_01_evento <- sum(droga_a == 0 & droga_b == 1 & ea_ocurrio == 1)
+    n_01_total <- sum(droga_a == 0 & droga_b == 1)
+    
+    # Grupo 00: ni A ni B (referencia)
+    n_00_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 1)
+    n_00_total <- sum(droga_a == 0 & droga_b == 0)
+    
+    # Validación: todos los grupos deben tener datos
+    if (n_11_total == 0 || n_10_total == 0 || n_01_total == 0 || n_00_total == 0) {
+      return(data.table(
+        stage = nichd_num[1],
+        RERI_classic = NA_real_,
+        RERI_classic_lower90 = NA_real_,
+        RERI_classic_upper90 = NA_real_,
+        RERI_classic_se = NA_real_,
+        # Datos diagnósticos
+        n_11_evento = n_11_evento,
+        n_11_total = n_11_total,
+        n_10_evento = n_10_evento,
+        n_10_total = n_10_total,
+        n_01_evento = n_01_evento,
+        n_01_total = n_01_total,
+        n_00_evento = n_00_evento,
+        n_00_total = n_00_total,
+        insufficient_data = TRUE
+      ))
+    }
+    
+    # Cálculo de riesgos (proporciones)
+    R11 <- n_11_evento / n_11_total
+    R10 <- n_10_evento / n_10_total
+    R01 <- n_01_evento / n_01_total
+    R00 <- n_00_evento / n_00_total
+    
+    # Cálculo de RERI
+    # RERI = R11 - R10 - R01 + R00
+    reri_val <- R11 - R10 - R01 + R00
+    
+    # Varianza de cada riesgo (distribución binomial)
+    # Var(R) = p(1-p)/n
+    # Para evitar división por cero, usar corrección de continuidad si p=0 o p=1
+    var_R11 <- ifelse(R11 > 0 & R11 < 1, 
+                      R11 * (1 - R11) / n_11_total,
+                      0.25 / n_11_total)  # Máxima varianza posible
+    
+    var_R10 <- ifelse(R10 > 0 & R10 < 1,
+                      R10 * (1 - R10) / n_10_total,
+                      0.25 / n_10_total)
+    
+    var_R01 <- ifelse(R01 > 0 & R01 < 1,
+                      R01 * (1 - R01) / n_01_total,
+                      0.25 / n_01_total)
+    
+    var_R00 <- ifelse(R00 > 0 & R00 < 1,
+                      R00 * (1 - R00) / n_00_total,
+                      0.25 / n_00_total)
+    
+    # Varianza de RERI (método delta)
+    # Como RERI = R11 - R10 - R01 + R00
+    # Var(RERI) = Var(R11) + Var(R10) + Var(R01) + Var(R00)
+    # (asumiendo independencia entre grupos)
+    var_reri <- var_R11 + var_R10 + var_R01 + var_R00
+    se_reri <- sqrt(var_reri)
+    
+    # IC90% 
+    z90 <- qnorm(0.95)
+    reri_lower90 <- reri_val - z90 * se_reri
+    reri_upper90 <- reri_val + z90 * se_reri
+    
+    data.table(
+      stage = nichd_num[1],
+      RERI_classic = reri_val,
+      RERI_classic_lower90 = reri_lower90,
+      RERI_classic_upper90 = reri_upper90,
+      RERI_classic_se = se_reri,
+      # Riesgos individuales para diagnóstico
+      R11 = R11,
+      R10 = R10,
+      R01 = R01,
+      R00 = R00,
+      # Conteos diagnósticos
+      n_11_evento = n_11_evento,
+      n_11_total = n_11_total,
+      n_10_evento = n_10_evento,
+      n_10_total = n_10_total,
+      n_01_evento = n_01_evento,
+      n_01_total = n_01_total,
+      n_00_evento = n_00_evento,
+      n_00_total = n_00_total,
+      insufficient_data = FALSE
+    )
+    
+  }, by = nichd_num]
+  
+  # Ordenar por etapa
+  setorder(resultados_por_etapa, nichd_num)
+  
+  # Verificar si hay datos suficientes en al menos una etapa
+  if (all(is.na(resultados_por_etapa$RERI_classic))) {
+    return(list(
+      success = FALSE,
+      message = "Datos insuficientes en todas las etapas",
+      results_by_stage = resultados_por_etapa
+    ))
+  }
+  
+  return(list(
+    success = TRUE,
+    results_by_stage = resultados_por_etapa
+  ))
+}
 
 
 
