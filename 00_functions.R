@@ -4,14 +4,18 @@
 # para usar, source("00_functions.R", local = TRUE)
 ################################################################################
 
-# ordenado de niveles para el resto de los scripts
+# cargado de librerias con pacman 
+library(pacman)
+pacman::p_load(tidyverse, mgcv, MASS, data.table, parallel, akima, doRNG)
 
+# ordenado de niveles para el resto de los scripts
 niveles_nichd <- c(
   "term_neonatal", "infancy", "toddler", "early_childhood",
   "middle_childhood", "early_adolescence", "late_adolescence"
 )
 
 Z90 <- qnorm(0.95)  # Cuantil 90% para intervalos de confianza
+source("01_theme.R", local = TRUE)
 
 ################################################################################
 # Función para construir tripletes
@@ -200,59 +204,80 @@ dynamic_fun <- function(type, N = 7) {
 # drugA_id: id droga A (ATC concept_id)
 # drugB_id: id droga B (ATC concept_id)
 # event_id: id del evento adverso (MedDRA concept_id)
-# dynamic_type: tipo de dinámica (llama dynamic_fun)
-# fold_change: magnitud del efecto (llama sample_fold_change)
+# dynamic_type: tipo de dinámica (llama generate_dynamic)
+# fold_change: magnitud del efecto (llama fold_change)
 # ade_raw_dt: data.table de dataset original
 # 
 # return Lista con: success, n_injected, n_coadmin, ade_aug, diagnostics
 # 
 # Implementación:
 # 
-# 1- Tasa base(t_ij):
-#  Probabilidad poblacional del evento
-#  Ahora calculada con intersección de droga A y B (distinto a Giangreco)
-#  Independiente de coadministración
+# 1 Tasa base(e_j):
+# Valor base para aplicar fold-change
+# El valor base debe ser calculado teniendo en cuenta componentes individuales 
+# El valor base altera la consistencia de la inyección en distintos escenarios
+# Script "simulacion_inyeccion" muestra consistencia en distintos escenarios
+# Los métodos que asumen "independencia" de los eventos solo se usan como proxy
+# no suponen independencia real 
+#
+# 2 Fold_change (FC):
+# Factor multiplicativo del efecto
 # 
-# 2- Fold_change (FC):
-#  Factor multiplicativo del efecto
+# 3 Dinámica f(j):
+# Función normalizada en [0, 1] por etapa
+# f(j) = llama a generate_dynamic(type, N=7)  <--- N siempre 7 por etapas nichd 
 # 
-# 3- Dinámica f(j):
-#   Función normalizada en [0, 1] por etapa
-#   f(j) = llama a dynamic_fun(type, N=7)  <--- N siempre 7 por etapas nichd 
+# 4 Probabilidad dinámica: (formula final de probabilidad de reporte)
+# p_dynamic(j) = e_j × FC + f(j)
 # 
-# 4- Probabilidad dinámica: (formula final de probabilidad de reporte)
-#   p_dynamic(j) = t_ij × FC + f(j)
-# 
-# 5- Simulación:
-#   Para cada reporte con drugA + drugB
-#   Y_new ~ Bernoulli(p_dynamic(stage_j))
-#   Inyecta SOLO en eventos que no existen (si ya hay evento, se deja, trata de modelar dinámica sobre existentes)
+# 5 Simulación:
+# Para cada reporte con drugA + drugB
+# Y_new ~ Bernoulli(p_dynamic(stage_j))
+# Inyecta SOLO en eventos que no existen (si ya hay evento, se deja, trata de modelar dinámica sobre existentes)
 
 inject_signal <- function(drugA_id, drugB_id, event_id, 
                           dynamic_type, fold_change, 
                           ade_raw_dt) {
   
+  if (drugA_id > drugB_id) {   # agrego ordenamiento (ya se hace en otras funciones pero por las dudas)
+    temp <- drugA_id
+    drugA_id <- drugB_id
+    drugB_id <- temp
+  }
+  
   # copia independiente (para que datos inyectados no vayan corrompiendo el dataset original)
   ade_aug <- copy(ade_raw_dt)
-  ade_aug[, simulated_flag := FALSE]
+  ade_aug[, simulated_event := FALSE]
   
   # 1- reportes con ambas drogas (coadministración)
   reports_A <- unique(ade_aug[atc_concept_id == drugA_id, safetyreportid])
   reports_B <- unique(ade_aug[atc_concept_id == drugB_id, safetyreportid])
-  reports_both <- intersect(reports_A, reports_B)
+  reports_AB <- intersect(reports_A, reports_B)
   
-  if (length(reports_both) == 0) {
+  if (length(reports_AB) <= 0) {
     return(list(
-      success = FALSE, n_injected = 0, n_coadmin = 0, 
-      ade_aug = NULL, 
-      message = "No coadministración encontrada",
-      diagnostics = NULL
+      success = FALSE,
+      injection_success = FALSE,
+      n_injected = 0,
+      n_coadmin = length(reports_AB),
+      ade_aug = NULL,
+      message = sprintf(
+        "coadministración insuficiente: %d reportes",
+        length(reports_AB),
+      ),
+      diagnostics = list(
+        reason = "insufficient_coadmin",
+        n_coadmin = length(reports_AB),
+        drugA = drugA_id,
+        drugB = drugB_id,
+        event = event_id
+      )
     ))
   }
   
   # 2- reportes objetivo (solo coadministración)
   target_reports <- unique(ade_raw_dt[
-    safetyreportid %in% reports_both, 
+    safetyreportid %in% reports_AB, 
     .(safetyreportid, nichd, nichd_num)
   ])
   
@@ -264,7 +289,9 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   
   target_reports[, e_old := as.integer(safetyreportid %in% event_in_report)]
   
-  # 3- Calculo tasa base (t_ij)
+  # 3- Calculo tasa base (e_j)
+
+  # Calculo tasas base individuales
   reports_A_clean <- setdiff(reports_A, reports_AB)
   reports_B_clean <- setdiff(reports_B, reports_AB)
   p_baseA <- mean(reports_A_clean %in% event_in_report)
@@ -290,9 +317,9 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   # (p_baseA * p_baseB) / p_base0
   e_j <- p_baseA + p_baseB - (p_baseA * p_baseB)
 
-  # t_ij = fold_change * e_j 
+  # t_ij = fold_change * e_j (tamaño de efecto)
   t_ij <- fold_change * e_j
-  
+
   # 4- Probabilidades por etapa 
   # bprobs = rep(tij, N)
   # dy = tanh(...) * tij  (la dinámica se escala por tij)
@@ -320,10 +347,10 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   }
   
   rprobs <- bprobs + dy
-  
-  # CHEQUEO: asegurar que las probabilidades estén en [0, 1]
-  rprobs <- pmin(pmax(rprobs, 0), 1)
-  
+
+  # clippeo de probabilidades
+  rprobs <- pmax(pmin(rprobs, 0.999), 0.001)
+
   # 5- tabla de probabilidades por etapa
   stage_probs <- data.table(
     nichd_num = 1:N,
@@ -350,22 +377,31 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   # Identifico reportes que DEBERÍAN tener el evento (simulado)
   reports_to_mark <- target_reports[e_old == 0 & e_final == 1, safetyreportid]
   
+  # validación de al menos 1 evento inyectado
   if (length(reports_to_mark) == 0) {
     return(list(
-      success = TRUE,  
+      success = FALSE,
+      injection_success = FALSE,
       n_injected = 0,
-      n_coadmin = length(reports_both),
-      ade_aug = ade_aug,  
-      message = "Probabilidad de inyección baja. 0 eventos nuevos",
+      n_coadmin = length(reports_AB),
+      ade_aug = NULL,
+      message = sprintf(
+        "Inyección fallida: 0 eventos generados (prob. media = %.4f, max = %.4f)",
+        mean(target_reports$p_dynamic),
+        max(target_reports$p_dynamic)
+      ),
       diagnostics = list(
+        reason = "zero_events_injected",
         low_probability_injection = TRUE,
         e_j = e_j,
         t_ij = t_ij,
         fold_change = fold_change,
+        dynamic_type = dynamic_type,
         mean_p_dynamic = mean(target_reports$p_dynamic),
         max_p_dynamic = max(target_reports$p_dynamic),
+        min_p_dynamic = min(target_reports$p_dynamic),
         n_eligible = nrow(target_reports[e_old == 0]),
-        dynamic_type = dynamic_type,
+        n_already_with_event = sum(target_reports$e_old),
         stage_probs = stage_probs
       )
     ))
@@ -381,49 +417,78 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
       simulated_drugB = drugB_id
     )
   ]
+
+  injection_rate <- length(reports_to_mark) / nrow(target_reports[e_old == 0])
   
-  # 9- CHEQUEO: diagnósticos
+  # 9- Diagnósticos
   diagnostics <- list(
-    # Parámetros fundamentales
     e_j = e_j,
     t_ij = t_ij,
     fold_change = fold_change,
     dynamic_type = dynamic_type,
-    
-    # Perfil dinámico
     stage_probs = stage_probs,
-    
-    # Estadísticas de probabilidades
     mean_p_dynamic = mean(target_reports$p_dynamic),
     max_p_dynamic = max(target_reports$p_dynamic),
     min_p_dynamic = min(target_reports$p_dynamic),
-    
-    # Reportes
     n_eligible = nrow(target_reports),
     n_already_with_event = sum(target_reports$e_old),
     n_without_event = nrow(target_reports[e_old == 0]),
-    
-    # Resultados de inyección
     n_new_events = length(reports_to_mark),
     injection_rate = length(reports_to_mark) / nrow(target_reports[e_old == 0]),
-    
-    # Distribución por etapa
     injection_by_stage = target_reports[
       safetyreportid %in% reports_to_mark, 
       .N, 
       by = nichd_num
+    ]
   )
   
   return(list(
     success = TRUE,
-    n_injected = nrow(reports_to_mark),
-    n_coadmin = length(reports_both),
+    injection_success = TRUE,
+    n_injected = length(reports_to_mark),
+    n_coadmin = length(reports_AB),
     ade_aug = ade_aug,
+    message = sprintf(
+      "Inyección exitosa: %d eventos en %d reportes (tasa: %.2f%%)",
+      length(reports_to_mark),
+      length(reports_AB),
+      injection_rate * 100
+    ),
     diagnostics = diagnostics
   ))
 }
 
+################################################################################
+# Función auxiliar: calcular conteos básicos
+################################################################################
 
+# Calcula conteos básicos (eventos, coadministraciones) para un par droga-evento
+#
+# Parámetros:
+#   ade_data: data.table aumentado con reportes (columnas atc_concept_id, meddra_concept_id, safetyreportid).
+#   drugA: id de droga A (atc_concept_id).
+#   drugB: id de droga B (atc_concept_id).
+#   meddra: id del evento (meddra_concept_id).
+#
+# Return:
+#   lista con: n_events, n_events_coadmin y n_coadmin
+
+calc_basic_counts <- function(ade_data, drugA, drugB, meddra) {
+  r_a <- unique(ade_data[atc_concept_id == drugA, safetyreportid])
+  r_b <- unique(ade_data[atc_concept_id == drugB, safetyreportid])
+  r_coadmin <- intersect(r_a, r_b)
+  r_ea <- unique(ade_data[meddra_concept_id == meddra, safetyreportid])
+  if("simulated_event" %in% names(ade_data)) {
+    r_ea_sim <- unique(ade_data[simulated_event == TRUE & simulated_meddra == meddra, safetyreportid])
+    r_ea <- union(r_ea, r_ea_sim)
+  }
+  list(
+    n_events = length(r_ea),
+    n_events_coadmin = length(intersect(r_coadmin, r_ea)),
+    n_coadmin = length(r_coadmin)
+  )
+}
+                   
 ################################################################################
 # Función para ajuste de GAM 
 ################################################################################
@@ -431,13 +496,14 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
 # Ajusta modelo GAM para interacción droga-droga 
 #
 # parametrizado para ir corriendo pruebas 
-
+#
 # parámetros:
 # drugA_id: id Droga A
 # drugB_id: id Droga B
 # event_id: id del evento adverso
 # ade_data: data.table con dataset original
 # 
+# include_nichd: Si TRUE, agrega efecto base de stage como covariable
 # nichd_spline: Si TRUE, usa spline para efecto base de stage.
 #               Si FALSE, usa coeficiente lineal (default: TRUE)
 # spline_individuales: Si TRUE, usa splines para efectos individuales (suaviza riesgos basales drogaA y B por separado)
@@ -449,11 +515,11 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
 # method; método de ajuste GAM (dejar "fREML")
 # 
 # Return: 
-# Lista con: success, n_events, n_coadmin, log_ior, etc.
+# Lista con: success, n_events, n_coadmin, log_ior, reri, etc.
 
-
-fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data,
+fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
                                  nichd_spline = TRUE,
+                                 include_nichd = TRUE,
                                  spline_individuales = FALSE,
                                  bs_type = "cs",
                                  select = FALSE,
@@ -479,10 +545,15 @@ fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data,
   } else {
     integer(0)
   }
+  # Eventos previos 
+  reportes_ea_real <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
 
   # Combinar reales + simulados
   reportes_ea <- union(reportes_ea_real, reportes_ea_sim)
-  
+  n_events_total <- length(reportes_ea)  # total eventos (con o sin fármaco)
+  n_coadmin <- length(reportes_coadmin)  # total reportes A+B (con o sin evento)
+  n_events_coadmin <- length(intersect(reportes_coadmin, reportes_ea))  # eventos A+B
+
   ###########
   # 2- Construcción de dataset para ajustar
   ###########
@@ -513,12 +584,7 @@ fit_differential_gam <- function(drugA_id, drugB_id, event_id, ade_data,
     
     # convertir a factor con niveles estándar
     datos_modelo[, sex := factor(sex, levels = c("MALE", "FEMALE"))]
-
     }
-  
-  
-  n_events <- sum(datos_modelo$ea_ocurrio)
-  n_coadmin <- sum(datos_modelo$droga_ab)
   
   ###########
   # 4- Construcción de fórmula con parámetros
@@ -1281,6 +1347,7 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
     results_by_stage = resultados_por_etapa
   ))
 }
+
 
 
 
