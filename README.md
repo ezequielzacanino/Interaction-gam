@@ -23,11 +23,9 @@ This repository contains the scripts used for the validation of a Generalized Ad
 01_theme.R                   # Plot theme.
 02_descriptive.R             # Descriptive analysis of the dataset.
 10_augmentation.R            # Data generation and results.
-11_augmentation_base.R       # Data generation and results without reduction (lightweight).
 20_null.R                    # Generation of the null distribution.
 30_metrics.R                 # Results analysis.
-31_metrics_base.R            # Results analysis without reduction (lightweight).
-32_metrics_facet.R           # Generation of faceted plots.
+31_metrics_graphs.R          # Generation of plots.
 40_network.R                 # Network analysis
 ```
 
