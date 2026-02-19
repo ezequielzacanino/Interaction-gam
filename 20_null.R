@@ -1,10 +1,13 @@
 ################################################################################
 # Script de generación de distribución nula
-# Script 02_nulldistribution
+# Script 20_null
 ################################################################################
 
 library(data.table)
 library(mgcv)
+library(parallel)
+library(doParallel)
+library(foreach)
 
 setwd("D:/Bioestadística/gam-farmacovigilancia")
 
@@ -13,46 +16,42 @@ setwd("D:/Bioestadística/gam-farmacovigilancia")
 ################################################################################
 
 ruta_ade_raw <- "./ade_raw.csv"
-ruta_null_pool_meta <- "./augmentation_results/null_pool_reports_metadata.csv"
-output_dir <- "./null_distribution_results/"
-dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+ruta_null_pool_meta <- paste0("./results/", suffix, "/augmentation_results/null_pool_reports_metadata.csv")
 
 # Parámetros para permutación
 perm_events <- TRUE   
 perm_drugs <- TRUE   
 
 # Parámetros para muestreo
-max_triplets_per_permutation <- 25  
-min_reports_triplet <- 5            
-target_total_triplets <- 2500        # Objetivo de tripletes
-max_permutation_attempts <- 1000    # intentos máximos
+max_triplets_per_permutation <- 150  
+min_reports_triplet <- 2
+target_total_triplets <- 10000       # Objetivo de tripletes
+max_permutation_attempts <- 15000    # intentos máximos
 
 seed_base <- 2025
 
 # Parámetros de fórmula GAM
-spline_individuales <- FALSE  
+spline_individuales <- TRUE 
 include_sex <- FALSE          
 include_stage_sex <- FALSE    
-k_spline <- 7                
-nichd_spline <- TRUE
+k_spline <- 7    
+include_nichd = FALSE
+nichd_spline <- FALSE 
 bs_type <- "cs"
-select <- TRUE
-method <- "fREML"
+select <- FALSE
+method <- "fREML" 
 
-# codifico cómo se guardan los resultados de las distintas formulas
 suffix <- paste0(
   if (spline_individuales) "si" else "",
   if (include_sex) "s" else "",
   if (include_stage_sex) "ss" else "",
+  if (include_nichd) "n" else "",
   if (nichd_spline) "ns" else "",
   bs_type
 )
 
-ruta_null_pool_meta <- paste0("./results/", suffix, "/augmentation_results/null_pool_reports_metadata.csv")
-
 output_dir <- paste0("./results/", suffix, "/null_distribution_results/")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-
 
 n_cores <- max(1, floor(detectCores() * 0.5))
 batch_size <- 5  # para que no colapse por llenado de memoria
@@ -78,7 +77,7 @@ if (include_sex) {
   cols_req <- c(cols_req, "sex")
 }
 
-# preprocesado
+# preprocesado de tipo de variables
 ade_raw_dt[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
 ade_raw_dt[, nichd_num := as.integer(nichd)]
 
@@ -128,23 +127,25 @@ message(sprintf("Pool nulo: %s reportes", format(nrow(pool_reports_meta), big.ma
 cl <- makeCluster(n_cores)
 registerDoParallel(cl)
 
-# objetos necesarios
+# objetos necesarios 
 clusterExport(cl, c(
   "ade_raw_dt", "pool_reports_meta", "niveles_nichd",
-  "permute_pool", "reintroduce_permuted_reports", "make_triplets_per_report",
-  "fit_differential_gam",
+  "permute_pool", "reintroduce_permuted_reports", "make_triplets",
+  "fit_gam", "include_nichd",
   "perm_events", "perm_drugs", "min_reports_triplet", 
   "max_triplets_per_permutation", "seed_base",
   "spline_individuales", "include_sex", "include_stage_sex",
-  "k_spline", "nichd_spline", "bs_type", "select", "method"
+  "k_spline", "nichd_spline", "bs_type", "select", "method",
+  "calculate_classic_ior", "calculate_classic_reri"
 ), envir = environment())
 
 # librerías
 clusterEvalQ(cl, {
   library(data.table)
   library(mgcv)
+  library(MASS)
 })
-  
+
 # Variables de control
 n_batches <- ceiling(max_permutation_attempts / batch_size)
 triplets_collected <- 0
@@ -154,9 +155,9 @@ batch_files <- character()  # para rastreo de archivos temporales
 
 for (batch in 1:n_batches) {
   
-  # Verificar si ya alcanzamos el objetivo
+  # Verificación de objetivo alcanzado
   if (triplets_collected >= target_total_triplets) {
-    message("\n¡Objetivo alcanzado!")
+    message("\nObjetivo alcanzado")
     break
   }
   
@@ -204,7 +205,10 @@ for (batch in 1:n_batches) {
         events_vec <- events_perm[[1]]
         
         if (length(drugs_vec) >= 2 && length(events_vec) >= 1) {
-          make_triplets_per_report(drugs_vec, events_vec, safetyreportid, nichd_num)
+          make_triplets(drug = drugs_vec, 
+            event = events_vec, 
+            report_id = safetyreportid, 
+            nichd_stage = nichd_num)
         } else {
           data.table()
         }
@@ -291,7 +295,7 @@ for (batch in 1:n_batches) {
       rowt <- valid_triplets[ti]
       
       model_res <- tryCatch({
-        fit_differential_gam(
+        fit_gam(
           drugA_id = rowt$drugA,
           drugB_id = rowt$drugB,
           event_id = rowt$meddra,
@@ -305,14 +309,15 @@ for (batch in 1:n_batches) {
           k_spline = k_spline
         )
       }, error = function(e) list(success = FALSE))
-      
-      if (!model_res$success) next
-      
+  
+      if (!model_res$success) next    
       if (any(is.na(model_res$log_ior)) || 
-          any(is.infinite(model_res$log_ior)) ||
-          any(abs(model_res$log_ior) > 20)) next
+        any(is.infinite(model_res$log_ior)) ||
+        any(abs(model_res$log_ior) > 20) ||
+        any(is.na(model_res$reri_lower90)) ||
+        any(is.infinite(model_res$reri_lower90))) next
       
-      # guardado de resultados
+      # guardado de resultados CON RERI
       result_dt <- data.table(
         drugA = rowt$drugA,
         drugB = rowt$drugB,
@@ -320,6 +325,8 @@ for (batch in 1:n_batches) {
         stage = 1:7,
         log_lower90 = model_res$log_ior_lower90,
         log_ior = model_res$log_ior,
+        reri_lower90 = model_res$reri_lower90,  
+        reri_values = model_res$reri_values,    
         permutation = perm_id,
         spline_individuales = spline_individuales,
         include_sex = include_sex,
@@ -328,9 +335,8 @@ for (batch in 1:n_batches) {
         k_spline = k_spline,
         bs_type = bs_type,
         select = select,
-        formula_used = if(model_res$success) model_res$formula_used else NA_character_
-      )
-      
+        formula_used = if(!is.null(model_res$formula_used)) model_res$formula_used else NA_character_
+      ) 
       triplet_results[[length(triplet_results) + 1]] <- result_dt
     }
     
@@ -409,6 +415,7 @@ stopCluster(cl)
 # Resultados
 ################################################################################
 
+
 message(sprintf("total de permutaciones: %d", permutation_attempt))
 message(sprintf("permutaciones exitosas: %d", permutation_attempt - failed_attempts))
 message(sprintf("tasa de éxito: %.1f%%",
@@ -417,9 +424,6 @@ message(sprintf("\nTripletes recolectados: %d", triplets_collected))
 message(sprintf("Objetivo: %d (%.1f%% completado)",
                 target_total_triplets,
                 100 * triplets_collected / target_total_triplets))
-
-null_all <- rbindlist(lapply(batch_files, fread), fill = TRUE)
-message(sprintf("Total de observaciones: %d", nrow(null_all)))
 
 
 # Leer en chunks para evitar saturar memoria
@@ -446,36 +450,40 @@ null_all <- rbindlist(null_all_chunks, fill = TRUE)
 rm(null_all_chunks)
 gc(full = TRUE)
 
+
 ################################################################################
 # Limpieza de outliers
 ################################################################################
 
 # no se si hace falta esto, creo que es relevante solo en modelos con muchos parámetros que dan muchos valores inestables
 
-null_all[, `:=`(
-  q005 = quantile(log_lower90, 0.005, na.rm = TRUE),
-  q995 = quantile(log_lower90, 0.995, na.rm = TRUE)
-), by = stage]
+#null_all[, `:=`(
+#  q005 = quantile(log_lower90, 0.005, na.rm = TRUE),
+#  q995 = quantile(log_lower90, 0.995, na.rm = TRUE)
+#), by = stage]
 
-null_cleaned <- null_all[
-  log_lower90 >= q005 & log_lower90 <= q995
-][, .(stage, log_lower90, log_ior, permutation)]
+#null_cleaned <- null_all[
+#  log_lower90 >= q005 & log_lower90 <= q995
+#][, .(stage, log_lower90, log_ior, permutation)]
 
-pct_removed <- 100 * (1 - nrow(null_cleaned) / nrow(null_all))
-message(sprintf(" outliers removidos: %.1f%%", pct_removed))
-
+#pct_removed <- 100 * (1 - nrow(null_cleaned) / nrow(null_all))
+#message(sprintf(" outliers removidos: %.1f%%", pct_removed))
+                                   
 ################################################################################
 # Calculo de umbrales
 ################################################################################
 
-null_thresholds <- null_cleaned[, .(
+# usar null_cleaned o null_all
+null_thresholds <- null_all[, .(
   threshold_p90 = quantile(log_lower90, 0.90, na.rm = TRUE),
   threshold_p95 = quantile(log_lower90, 0.95, na.rm = TRUE),
   threshold_p99 = quantile(log_lower90, 0.99, na.rm = TRUE),
   threshold_p999 = quantile(log_lower90, 0.999, na.rm = TRUE),
   n_samples = .N,
   mean_null = mean(log_lower90, na.rm = TRUE),
-  sd_null = sd(log_lower90, na.rm = TRUE)
+  sd_null = sd(log_lower90, na.rm = TRUE),
+  mean_null_reri = mean(reri_lower90, na.rm = TRUE),
+  sd_null_reri = sd(reri_lower90, na.rm = TRUE)
 ), by = stage]
 
 null_thresholds[, stage_name := niveles_nichd[stage]]
@@ -483,22 +491,40 @@ null_thresholds[, stage_name := niveles_nichd[stage]]
 cat("umbrales por etapa:\n")
 print(null_thresholds[, .(stage, stage_name, threshold_p99, n_samples)])
 
+null_thresholds_reri <- null_all[, .(
+  threshold_p90 = quantile(reri_lower90, 0.90, na.rm = TRUE),
+  threshold_p95 = quantile(reri_lower90, 0.95, na.rm = TRUE),
+  threshold_p99 = quantile(reri_lower90, 0.99, na.rm = TRUE),
+  threshold_p999 = quantile(reri_lower90, 0.999, na.rm = TRUE),
+  n_samples = .N,
+  mean_null = mean(reri_lower90, na.rm = TRUE),
+  sd_null = sd(reri_lower90, na.rm = TRUE)), by = stage]
+
+null_thresholds_reri[, stage_name := niveles_nichd[stage]]
+
+cat("\nUmbrales RERI por etapa:\n")
+print(null_thresholds_reri[, .(stage, stage_name, threshold_p99, n_samples)])
+
 ################################################################################
 # Guardado de resultados 
 ################################################################################
 
-fwrite(null_cleaned, paste0(output_dir, "null_distribution.csv"))
+fwrite(null_all, paste0(output_dir, "null_distribution.csv"))
 fwrite(null_thresholds, paste0(output_dir, "null_thresholds.csv"))
+fwrite(null_thresholds_reri, paste0(output_dir, "null_thresholds_reri.csv"))  
 
 execution_summary <- data.table(
   parameter = c("perm_events", "perm_drugs", "max_triplets_per_permutation",
                 "target_total_triplets", "total_permutations", 
-                "triplets_collected", "success_rate"),
+                "triplets_collected", "success_rate",
+                "n_samples_ior", "n_samples_reri"),  
   value = c(perm_events, perm_drugs, max_triplets_per_permutation,
             target_total_triplets, permutation_attempt,
             triplets_collected,
-            100 * (permutation_attempt - failed_attempts) / permutation_attempt)
+            100 * (permutation_attempt - failed_attempts) / permutation_attempt,
+            nrow(null_all), nrow(null_all[!is.na(reri_lower90)]))  
 )
 fwrite(execution_summary, paste0(output_dir, "execution_summary.csv"))
+
 
 
