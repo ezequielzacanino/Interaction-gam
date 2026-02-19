@@ -2467,6 +2467,291 @@ plot_power_surface <- function(
     ) 
   return(p)
 }
+      
+################################################################################
+# Función de cálculo de métricas por bootstrap
+################################################################################
+
+# Calcula métricas de clasificación con IC95% por bootstrap
+# 
+# Parámetros:
+# dt data.table con columnas: triplet_id, detected, label
+# n_boot número de replicaciones bootstrap
+# aggregate_triplet si TRUE, agrega a nivel triplete con any(). si FALSE, mantiene granularidad actual (etapa o dinámica)
+# 
+# Return: 
+# data.table con métricas e IC95%
+
+calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score_type, score_type_auc) {
+  
+  # Agregación a nivel triplete si se pide
+  if (aggregate_triplet) {
+    dt_eval <- dt[, .(
+      detected = any(detected, na.rm = TRUE),
+      label = unique(label),
+      score = max(get(score_type), na.rm = TRUE),
+      score_auc = max(get(score_type_auc), na.rm = TRUE)
+    ), by = triplet_id]
+  } else {
+    dt_eval <- dt[, .(triplet_id, detected, label, score = get(score_type), score_auc = get(score_type_auc))]
+  }
+  
+  n_pos <- sum(dt_eval$label == 1)
+  n_neg <- sum(dt_eval$label == 0)
+  n_total <- nrow(dt_eval)
+  
+  auc_result <- tryCatch({
+    # filtro valores NA e infinitos antes de calcular ROC  
+    dt_roc <- dt_eval[is.finite(score_auc) & !is.na(score_auc) & !is.na(label)]
+    
+    if (nrow(dt_roc) < 2 || length(unique(dt_roc$label)) < 2) {
+    stop("Datos insuficientes")
+    }
+    
+    roc_data <- pROC::roc(
+      response = dt_roc$label,
+      predictor = dt_roc$score_auc,
+      quiet = TRUE,
+      direction = "<"
+    )
+    auc <- as.numeric(pROC::auc(roc_data))
+    
+    # Bootstrap para AUC
+    b_auc <- replicate(n_boot, {
+      b_idx <- sample(nrow(dt_roc), replace = TRUE)
+      b_dt <- dt_roc[b_idx]
+      
+      # chequeo que hay ambas clases en la muestra bootstrap
+      if (length(unique(b_dt$label)) < 2) {
+        return(NA_real_)
+      }
+      
+      roc_boot <- pROC::roc(
+        response = b_dt$label,
+        predictor = b_dt$score_auc,
+        quiet = TRUE,
+        direction = "<"
+      )
+      as.numeric(pROC::auc(roc_boot))
+    })
+    
+    list(
+      auc = auc,
+      auc_lower = unname(quantile(b_auc, 0.025, na.rm = TRUE)),
+      auc_upper = unname(quantile(b_auc, 0.975, na.rm = TRUE))
+    )
+  }, error = function(e) {
+    warning(sprintf("Error en cálculo de AUC: %s", e$message))
+    list(auc = NA_real_, auc_lower = NA_real_, auc_upper = NA_real_)
+  })
+  
+  # Bootstrap
+  if (aggregate_triplet) {
+    # Identificar IDs únicos para bootstrap por triplete
+    unique_pos_ids <- unique(dt_eval[label == 1, triplet_id])
+    unique_neg_ids <- unique(dt_eval[label == 0, triplet_id])
+  
+    boot_stats <- replicate(n_boot, {
+      boot_pos_ids <- sample(unique_pos_ids, length(unique_pos_ids), replace = TRUE)
+      boot_neg_ids <- sample(unique_neg_ids, length(unique_neg_ids), replace = TRUE)
+      ids_dt <- data.table(triplet_id = c(boot_pos_ids, boot_neg_ids))
+      boot_dt <- dt_eval[ids_dt, on = "triplet_id", nomatch = NULL]
+    
+      b_tp <- sum(boot_dt$detected & boot_dt$label == 1)
+      b_fn <- sum(!boot_dt$detected & boot_dt$label == 1)
+      b_fp <- sum(boot_dt$detected & boot_dt$label == 0)
+      b_tn <- sum(!boot_dt$detected & boot_dt$label == 0)
+    
+      b_sens <- ifelse((b_tp + b_fn) > 0, b_tp / (b_tp + b_fn), 0)
+      b_spec <- ifelse((b_tn + b_fp) > 0, b_tn / (b_tn + b_fp), 0)
+      b_ppv <- ifelse((b_tp + b_fp) > 0, b_tp / (b_tp + b_fp), 0)
+      b_npv <- ifelse((b_tn + b_fn) > 0, b_tn / (b_tn + b_fn), 0)
+      b_acc <- (b_tp + b_tn) / nrow(boot_dt)
+      b_f1 <- ifelse((b_tp + b_fp) > 0 && (b_tp + b_fn) > 0, 2 * b_tp / (2 * b_tp + b_fp + b_fn), 0)
+    
+      c(b_sens, b_spec, b_ppv, b_npv, b_acc, b_f1, b_tp, b_fn, b_fp, b_tn)
+    })
+
+  } else {
+    # Bootstrap por FILA para análisis por etapa
+    pos_idx <- which(dt_eval$label == 1)
+    neg_idx <- which(dt_eval$label == 0)
+
+    boot_stats <- replicate(n_boot, {
+      boot_pos_idx <- sample(pos_idx, n_pos, replace = TRUE)
+      boot_neg_idx <- sample(neg_idx, n_neg, replace = TRUE)
+      boot_idx <- c(boot_pos_idx, boot_neg_idx)
+      boot_dt <- dt_eval[boot_idx]
+    
+      b_tp <- sum(boot_dt$detected & boot_dt$label == 1)
+      b_fn <- sum(!boot_dt$detected & boot_dt$label == 1)
+      b_fp <- sum(boot_dt$detected & boot_dt$label == 0)
+      b_tn <- sum(!boot_dt$detected & boot_dt$label == 0)
+    
+      b_sens <- ifelse((b_tp + b_fn) > 0, b_tp / (b_tp + b_fn), 0)
+      b_spec <- ifelse((b_tn + b_fp) > 0, b_tn / (b_tn + b_fp), 0)
+      b_ppv <- ifelse((b_tp + b_fp) > 0, b_tp / (b_tp + b_fp), 0)
+      b_npv <- ifelse((b_tn + b_fn) > 0, b_tn / (b_tn + b_fn), 0)
+      b_acc <- (b_tp + b_tn) / nrow(boot_dt)
+      b_f1 <- ifelse((b_tp + b_fp) > 0 && (b_tp + b_fn) > 0, 2 * b_tp / (2 * b_tp + b_fp + b_fn), 0)
+    
+      c(b_sens, b_spec, b_ppv, b_npv, b_acc, b_f1, b_tp, b_fn, b_fp, b_tn)
+    })
+  }
+  
+  # Cálculo de métricas puntuales como media del bootstrap (así evito desalinear con IC)
+  sens_boot <- boot_stats[1, ]
+  spec_boot <- boot_stats[2, ]
+  ppv_boot <- boot_stats[3, ]
+  npv_boot <- boot_stats[4, ]
+  acc_boot <- boot_stats[5, ]
+  f1_boot <- boot_stats[6, ]
+  
+  sens <- mean(sens_boot, na.rm = TRUE)
+  spec <- mean(spec_boot, na.rm = TRUE)
+  ppv <- mean(ppv_boot, na.rm = TRUE)
+  npv <- mean(npv_boot, na.rm = TRUE)
+  acc <- mean(acc_boot, na.rm = TRUE)
+  f1 <- mean(f1_boot, na.rm = TRUE)
+  
+  # cálculo de IC
+  calc_ci <- function(valores_boot) {
+    c(
+      point = mean(valores_boot, na.rm = TRUE),
+      lower = unname(quantile(valores_boot, 0.025, na.rm = TRUE)),
+      upper = unname(quantile(valores_boot, 0.975, na.rm = TRUE))
+    )
+  }
+  
+  sens_ci <- calc_ci(sens_boot)
+  spec_ci <- calc_ci(spec_boot)
+  ppv_ci <- calc_ci(ppv_boot)
+  npv_ci <- calc_ci(npv_boot)
+  acc_ci <- calc_ci(acc_boot)
+  f1_ci <- calc_ci(f1_boot)
+  
+  # Conteos del dataset original (no bootstrap) para referencia
+  tp_orig <- sum(dt_eval$detected & dt_eval$label == 1)
+  fn_orig <- sum(!dt_eval$detected & dt_eval$label == 1)
+  fp_orig <- sum(dt_eval$detected & dt_eval$label == 0)
+  tn_orig <- sum(!dt_eval$detected & dt_eval$label == 0)
+  
+  data.table(
+    sensitivity = sens_ci["point"], sensitivity_lower = sens_ci["lower"], sensitivity_upper = sens_ci["upper"],
+    specificity = spec_ci["point"], specificity_lower = spec_ci["lower"], specificity_upper = spec_ci["upper"],
+    PPV = ppv_ci["point"], PPV_lower = ppv_ci["lower"], PPV_upper = ppv_ci["upper"],
+    NPV = npv_ci["point"], NPV_lower = npv_ci["lower"], NPV_upper = npv_ci["upper"],
+    Accuracy = acc_ci["point"],
+    F1 = f1_ci["point"], F1_lower = f1_ci["lower"], F1_upper = f1_ci["upper"],
+    TP = tp_orig, FN = fn_orig, FP = fp_orig, TN = tn_orig,
+    n_positives = n_pos, n_negatives = n_neg, n_total = n_total,
+    AUC = auc_result$auc,
+    AUC_lower = auc_result$auc_lower,
+    AUC_upper = auc_result$auc_upper
+  )
+}
+
+################################################################################
+# Función de expansión de datos con reducción
+################################################################################
+
+# Función que expande datos a formato largo
+#
+# Implementación:
+# Carga datos y crea objetos según nivel de reducción
+# Filtra inyecciones fallidas
+# Expande a formato largo
+# Filtra por etapas con alto reporte según dinamica
+
+expand <- function(red_pct) {
+  suffix_file <- if(red_pct == 0) "" else paste0("_", red_pct)  # objeto con nombre según nivel de reducción
+  
+  ruta_pos <- paste0(ruta_base_sensitivity, "positive_triplets_results", suffix_file, ".rds")
+  ruta_neg <- paste0(ruta_base_sensitivity, "negative_triplets_results", suffix_file, ".rds")
+  
+  pos_raw <- readRDS(ruta_pos)
+  neg_raw <- readRDS(ruta_neg)
+  
+  # solo inyecciones exitosas
+  pos_valid <- pos_raw[injection_success == TRUE]
+  
+  # expando a formato largo
+  pos_exp <- expand_clean_all_metrics(pos_valid, 1, null_thresholds, use_threshold_ior, use_threshold_reri)
+  neg_exp <- expand_clean_all_metrics(neg_raw, 0, null_thresholds, use_threshold_ior, use_threshold_reri)
+  
+  # Merge con clasificación de etapas
+  pos_exp <- merge(pos_exp, stage_class, by = c("nichd", "dynamic"), all.x = TRUE)
+  neg_exp[, class := 0]
+  
+  # Merge con datos de coadministración
+  pos_exp <- merge(pos_exp, coadmin_stage_pos[, .(triplet_id, stage_num, n_coadmin_stage)], by = c("triplet_id", "stage_num"), all.x = TRUE)
+  neg_exp <- merge(neg_exp, coadmin_stage_neg[, .(triplet_id, stage_num, n_coadmin_stage)], by = c("triplet_id", "stage_num"), all.x = TRUE)
+  
+  # Dataset de alto reporte (excluir uniform)
+  pos_high <- pos_exp[class == 1]
+  neg_high <- neg_exp[class == 0]
+  
+  list(
+    pos_all = pos_exp,
+    pos_high = pos_high,
+    neg_high = neg_high,
+    reduction_pct = red_pct
+  )
+}
+
+################################################################################
+# Función de detección de señal
+################################################################################
+
+# Detecta señales según método
+#
+# Parámetros:
+# data:resultados expandidos de tripletes (formato largo)
+# thresholds: umbrales por etapa 
+# method: método de detección ("gam" o "classic")
+# criterion: criterio de detección ("ior", "reri", o "double")
+# use_threshold: si TRUE, aplica umbrales de la distribución nula
+#
+
+detect_signal <- function(dt, method_name, detection_type, use_null) {
+  
+  is_gam <- grepl("GAM", method_name) # busca GAM en el string del método
+  
+  # Determinar columnas según método
+  if (is_gam) {
+    ior_col <- "gam_log_ior_lower90"
+    reri_col <- "gam_reri_lower90"
+    thresh_ior_col <- "threshold_ior"   # umbrales de distribución nula
+    thresh_reri_col <- "threshold_reri"
+  } else {
+    ior_col <- "classic_log_ior_lower90"
+    reri_col <- "classic_reri_lower90"
+    thresh_ior_col <- NULL
+    thresh_reri_col <- NULL
+  }
+  
+  # Calcular detección según tipo
+  if (detection_type == "IOR") {
+    if (is_gam && use_null) {   # detección para gam con umbral de distribución nula
+      dt[, detected := !is.na(get(ior_col)) & get(ior_col) > 0 & get(ior_col) > get(thresh_ior_col)]
+    } else { dt[, detected := !is.na(get(ior_col)) & get(ior_col) > 0]}
+  } else if (detection_type == "RERI") {
+    if (is_gam && use_null) { dt[, detected := !is.na(get(reri_col)) & get(reri_col) > 0 & get(reri_col) > get(thresh_reri_col)]
+    } else {dt[, detected := !is.na(get(reri_col)) & get(reri_col) > 0]}
+  } else { # Doble
+    if (is_gam && use_null) {
+      dt[, detected := (!is.na(get(ior_col)) & get(ior_col) > 0 & get(ior_col) > get(thresh_ior_col)) | # ambos criterios
+                       (!is.na(get(reri_col)) & get(reri_col) > 0 & get(reri_col) > get(thresh_reri_col))]
+    } else { dt[, detected := (!is.na(get(ior_col)) & get(ior_col) > 0) | (!is.na(get(reri_col)) & get(reri_col) > 0)]}
+  }
+  
+  # Reemplazar NA por FALSE (osea, no detectado)
+  dt[is.na(detected), detected := FALSE]
+  
+  return(dt)
+}
+
+
 
 
 
