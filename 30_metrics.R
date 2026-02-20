@@ -243,21 +243,6 @@ power_gam_ior <- calculate_power_gam(
   detection = "ior"
 )
 
-# Heatmap de superficie de poder GAM
-p_surface_gam_ior <- plot_power_surface(power_gam_ior, 
-  target_power, detection = "Log-IOR", grid_size = grid_res,
-  t_range = c(0, tij_max), n_range = c(0, n_max)
-)
-ggsave(
-  paste0(output_dir, "fig_power_surface_gam_ior.png"), 
-  p_surface_gam_ior,
-  width = 12,
-  height = 8,
-  dpi = 300
-)
-
-print(p_surface_gam_ior)
-
 # GAM-RERI
 message("GAM-RERI")
 power_gam_reri <- calculate_power_gam(
@@ -271,22 +256,6 @@ power_gam_reri <- calculate_power_gam(
   detection = "reri"
 )
 
-# Heatmap de superficie de poder GAM-RERI
-p_surface_gam_reri <- plot_power_surface(power_gam_reri, 
-  target_power, detection = "RERI", grid_size = grid_res,
-  t_range = c(0, tij_max), n_range = c(0, n_max)
-)
-
-ggsave(
-  paste0(output_dir, "fig_power_surface_gam_reri.png"),
-  p_surface_gam_reri,
-  width = 12,
-  height = 8,
-  dpi = 300
-)
-
-print(p_surface_gam_reri)
-
 # Estratificado-IOR
 message("Estratificado-IOR")
 power_cls_ior <- calculate_power_classic(
@@ -298,22 +267,6 @@ power_cls_ior <- calculate_power_classic(
   detection = "ior",
   na_remove = TRUE
 )
-
-# Heatmap de superficie de poder para método Estratificado-IOR
-p_surface_classic_ior <- plot_power_surface(power_cls_ior, 
-  target_power, detection = "IOR", grid_size = grid_res,
-  t_range = c(0, tij_max), n_range = c(0, n_max)
-)
-
-ggsave( 
-  paste0(output_dir, "fig_power_surface_classic_ior.png"),
-  p_surface_classic_ior,
-  width = 12,
-  height = 8,
-  dpi = 300
-)
-
-print(p_surface_classic_ior)
 
 # Estratificado-RERI
 message("Estratificado-RERI")
@@ -327,22 +280,54 @@ power_cls_reri <- calculate_power_classic(
   na_remove = TRUE
 )
 
-# Heatmap de superficie de poder para método Estratificado-RERI
-p_surface_classic_reri <- plot_power_surface(power_cls_reri, 
-  target_power, detection = "RERI", grid_size = grid_res,
-  t_range = c(0, tij_max), n_range = c(0, n_max)
+power_ior_list <- list(
+  "GAM" = power_gam_ior,
+  "Estratificado" = power_cls_ior
 )
 
-ggsave( 
-  paste0(output_dir, "fig_power_surface_classic_reri.png"),
-  p_surface_classic_reri,
-  width = 12,
-  height = 8,
+p_surface_ior <- plot_power_surface(
+  power_results_list = power_ior_list,
+  target_power = target_power, 
+  detection = "IOR",
+  grid_size = grid_res,
+  t_range = c(0, tij_max), 
+  n_range = c(0, n_max)
+)
+
+ggsave(
+  paste0(output_dir, "fig_power_surface_ior_combined.png"), 
+  p_surface_ior,
+  width = 14,      
+  height = 7,     
   dpi = 300
 )
 
-print(p_surface_classic_reri)
+print(p_surface_ior)
 
+power_reri_list <- list(
+  "GAM" = power_gam_reri,
+  "Estratificado" = power_cls_reri
+)
+
+p_surface_reri <- plot_power_surface(
+  power_results_list = power_reri_list,
+  target_power = target_power,
+  detection = "RERI", 
+  grid_size = grid_res,
+  t_range = c(0, tij_max),
+  n_range = c(0, n_max)
+)
+
+ggsave(
+  paste0(output_dir, "fig_power_surface_reri_combined.png"),
+  p_surface_reri, 
+  width = 14,
+  height = 7,
+  dpi = 300
+)
+
+print(p_surface_reri)
+  
 # Guardo IDs de tripletes para cada subset de poder
 power_ids <- list(
   "GAM-logIOR" = unique(power_gam_ior$superset_pos[class == 1]$triplet_id),
@@ -665,4 +650,5 @@ metrics_stage_intersection <- rbindlist(res_etapa_inter, fill = TRUE)
 fwrite(metrics_global_intersection, paste0(output_dir, "metrics_global_intersection.csv"))
 fwrite(metrics_dynamic_intersection, paste0(output_dir, "metrics_dynamic_intersection.csv"))
 fwrite(metrics_stage_intersection, paste0(output_dir, "metrics_stage_intersection.csv"))
+
 
