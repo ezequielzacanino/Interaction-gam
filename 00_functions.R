@@ -2314,9 +2314,10 @@ calculate_power_classic <- function(
 # retorna estadísticas del punto óptimo
 
 plot_power_surface <- function(
-  power_result, 
+  power_results_list,
+  facet_by = "method",
   target_power = 0.80, 
-  detection = "double",
+  detection = detection,
   t_range = c(0, 0.5),      
   n_range = c(0, 300),
   grid_size = 30) 
@@ -2328,84 +2329,74 @@ plot_power_surface <- function(
   library(akima)
   
   ###########
-  # 1- Validación y preparación de datos
+  # 1- Procesar múltiples superficies
   ###########
   
-  surface <- as.data.table(power_result$power_surface)
-  
-  # parámetros 
-  t_star <- power_result$t_star
-  n_star <- power_result$n_star
-  achieved_power <- power_result$achieved_power
-  criterion_type <- power_result$criterion_type
-  metric_n <- power_result$metric_n_used
+  all_surfaces <- rbindlist(lapply(names(power_results_list), function(met_name) {
+    surface <- as.data.table(power_results_list[[met_name]]$power_surface)
+    surface[, method_label := met_name]
+    return(surface)
+  }), fill = TRUE)
   
   ###########
   # 2- Limpieza de datos originales
   ###########
   
   # Remover NA y valores no finitos
-  surface_clean <- surface[is.finite(t_threshold) & is.finite(n_threshold) & is.finite(power)]
+  surface_clean <- all_surfaces[is.finite(t_threshold) & is.finite(n_threshold) & is.finite(power)]
   
   ###########
   # 3- Interpolación a grilla regular completa
   ###########
+
+  # secuencias regulares con mismo rango para X e Y (para que sea cuadrado)
+  # Usar el rango más amplio de ambos ejes para mantener proporción
+  common_range <- c(0, max(t_range[2], n_range[2]))
   
   # Crear secuencias regulares para la grilla
   t_seq <- seq(t_range[1], t_range[2], length.out = grid_size)
   n_seq <- seq(n_range[1], n_range[2], length.out = grid_size)
   
-  # Interpolación bilineal con akima
-  interp_result <- tryCatch({
-    interp(
-      x = surface_clean$t_threshold,
-      y = surface_clean$n_threshold,
-      z = surface_clean$power,
-      xo = t_seq,
-      yo = n_seq,
-      linear = TRUE,     # Interpolación lineal 
-      extrap = FALSE     # No extrapolar fuera de datos
-    )
-  }, error = function(e) {
-    warning(sprintf("Error en interpolación: %s", e$message))
-    return(NULL)
-  })
-
-  # Convertir resultado de interpolación a data.table
-  surface_interp <- data.table(
-    expand.grid(
+  surfaces_interp <- lapply(unique(surface_clean$method_label), function(met) {
+    surface_met <- surface_clean[method_label == met]
+    
+    interp_result <- tryCatch({
+      interp(
+        x = surface_met$t_threshold,
+        y = surface_met$n_threshold,
+        z = surface_met$power,
+        xo = t_seq,
+        yo = n_seq,
+        linear = TRUE,
+        extrap = FALSE
+      )
+    }, error = function(e) NULL)
+    
+    if (is.null(interp_result)) return(NULL)
+    
+    dt <- data.table(expand.grid(
       t_threshold = interp_result$x,
       n_threshold = interp_result$y
-    )
-  )
-    
-  # Aplanar matriz a vector
-  surface_interp[, power := as.vector(interp_result$z)]
-    
-  # Remover NA generados por extrap = FALSE
-  surface_plot <- surface_interp[!is.na(power)]
-    
-  # Clipear poder a [0, 1] por si hay overshooting de interpolación
+    ))
+    dt[, power := as.vector(interp_result$z)]
+    dt[, method_label := met]
+    return(dt)
+  })
+  
+  surface_plot <- rbindlist(surfaces_interp, fill = TRUE)
+  surface_plot <- surface_plot[!is.na(power)]
   surface_plot[, power := pmin(pmax(power, 0), 1)]
-
-  message(sprintf("  Grilla final: %d celdas", nrow(surface_plot)))
   
   ###########
   # 5- Etiquetas de método
   ###########
 
-  method_label <- fifelse(
-    criterion_type == "gam",
-    "GAM",
-    "Estratificado"
-  )
-  
-  detection_label <- switch(
-    detection,
-    "IOR" = "IOR",
-    "RERI" = "RERI",
-    "DOUBLE" = "IOR/RERI",
-    "DOBLE" = "IOR/RERI",
+  # subtítulo con info de cada método
+  subtitulo <- paste(opt_params_dt[, sprintf("%s: t≥%.4f, N≥%.0f (%.1f%%)", method_label, t_star, n_star, achieved_power*100)], collapse = " | ")
+
+  method_label_clean <- switch(detection,
+    "IOR" = "Detección IOR",
+    "RERI" = "Detección RERI",
     detection
   )
   
@@ -2417,6 +2408,9 @@ plot_power_surface <- function(
     
     # geom_raster() para grillas regulares
     geom_raster(interpolate = FALSE) +  # interpolate=TRUE suaviza visualmente
+
+    # facetado
+    facet_wrap(~ method_label, ncol = 2, scales = "fixed") + 
     
     # Escala de color
     scale_fill_viridis_c(
@@ -2441,30 +2435,14 @@ plot_power_surface <- function(
       expand = c(0, 0),
       breaks = pretty_breaks(n = 6)
     ) +
-    
     # Etiquetas
     labs(
-      title = sprintf(
-        "Superficie de Poder - Método %s - Detección %s",
-        method_label,
-        detection_label
-      ),
-      subtitle = sprintf(
-        "Óptimo: t≥%.4f, N≥%.0f | Poder alcanzado: %.1f%% (objetivo: %.0f%%)",
-        t_star,
-        n_star,
-        achieved_power * 100,
-        target_power * 100
-      ),
+      title = sprintf("Superficie de Poder - %s", method_label_clean),
+      subtitle = sprintf("Objetivo: %.0f%% | %s", target_power * 100, subtitulo),
       x = expression("Tamaño de Efecto " * (t[italic(ij)])),
-      y = sprintf("número de reportes A-B"),
-      caption = sprintf(
-        "Grilla: %dx%d celdas interpoladas desde %d puntos originales",
-        grid_size,
-        grid_size,
-        nrow(surface_clean)
-      )
-    ) 
+      y = "Número de reportes A-B",
+      caption = sprintf("Grilla: %dx%d celdas", grid_size, grid_size)
+    )
   return(p)
 }
       
@@ -2750,6 +2728,7 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
   
   return(dt)
 }
+
 
 
 
