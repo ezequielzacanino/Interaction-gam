@@ -797,7 +797,8 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
     calc_reri <- function(p) {
       # p es un vector de 4 probabilidades por etapa: [p00, p10, p01, p11]
       p11 <- p[4]; p10 <- p[2]; p01 <- p[3]; p00 <- p[1]
-      p11 - p10 - p01 + p00
+      if (p00 <= 0) return(NA_real_)          # guarda contra división por cero
+      p11/p00 - p10/p00 - p01/p00 + 1
     }
     
     # Cálculo por etapa
@@ -1098,41 +1099,46 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
     R01 <- n_01_evento / n_01_total
     R00 <- n_00_evento / n_00_total
     
-    # Cálculo de RERI
-    # RERI = R11 - R10 - R01 + R00
-    reri_val <- R11 - R10 - R01 + R00
-    
-    # Varianza de cada riesgo (distribución binomial)
-    # Var(R) = p(1-p)/n
-    # Para evitar división por cero, usar corrección de continuidad si p=0 o p=1
-    var_R11 <- ifelse(R11 > 0 & R11 < 1, 
-                      R11 * (1 - R11) / n_11_total,
-                      0.25 / n_11_total)  # Máxima varianza posible
-    
-    var_R10 <- ifelse(R10 > 0 & R10 < 1,
-                      R10 * (1 - R10) / n_10_total,
-                      0.25 / n_10_total)
-    
-    var_R01 <- ifelse(R01 > 0 & R01 < 1,
-                      R01 * (1 - R01) / n_01_total,
-                      0.25 / n_01_total)
-    
-    var_R00 <- ifelse(R00 > 0 & R00 < 1,
-                      R00 * (1 - R00) / n_00_total,
-                      0.25 / n_00_total)
-    
-    # Varianza de RERI (método delta)
-    # Como RERI = R11 - R10 - R01 + R00
-    # Var(RERI) = Var(R11) + Var(R10) + Var(R01) + Var(R00)
-    # (asumiendo independencia entre grupos)
-    var_reri <- var_R11 + var_R10 + var_R01 + var_R00
+    if (R00 == 0) {
+      return(data.table(
+        stage = nichd_num[1],
+        RERI_classic = NA_real_,
+        RERI_classic_lower90 = NA_real_,
+        RERI_classic_upper90 = NA_real_,
+        RERI_classic_se = NA_real_,
+        n_11_evento = n_11_evento, n_11_total = n_11_total,
+        n_10_evento = n_10_evento, n_10_total = n_10_total,
+        n_01_evento = n_01_evento, n_01_total = n_01_total,
+        n_00_evento = n_00_evento, n_00_total = n_00_total,
+        insufficient_data = TRUE
+      ))
+    }
+
+    reri_val <- R11/R00 - R10/R00 - R01/R00 + 1
+
+    # Varianzas binomiales de cada riesgo
+    var_r <- function(r, n) ifelse(r > 0 & r < 1, r*(1-r)/n, 0.25/n)
+    var_R11 <- var_r(R11, n_11_total)
+    var_R10 <- var_r(R10, n_10_total)
+    var_R01 <- var_r(R01, n_01_total)
+    var_R00 <- var_r(R00, n_00_total)
+
+    # Varianza de RERI por delta method:
+    # RERI = (R11 - R10 - R01) / R00 + 1
+    # dRERI/dR11 =  1/R00
+    # dRERI/dR10 = -1/R00
+    # dRERI/dR01 = -1/R00
+    # dRERI/dR00 = -(R11 - R10 - R01) / R00^2
+    numerador <- R11 - R10 - R01
+    var_reri <- (var_R11 + var_R10 + var_R01) / R00^2 +
+                numerador^2 * var_R00 / R00^4
     se_reri <- sqrt(var_reri)
-    
-    # IC90% 
+
+    # IC90%
     z90 <- qnorm(0.95)
     reri_lower90 <- reri_val - z90 * se_reri
     reri_upper90 <- reri_val + z90 * se_reri
-    
+
     data.table(
       stage = nichd_num[1],
       RERI_classic = reri_val,
@@ -1140,19 +1146,12 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
       RERI_classic_upper90 = reri_upper90,
       RERI_classic_se = se_reri,
       # Riesgos individuales para diagnóstico
-      R11 = R11,
-      R10 = R10,
-      R01 = R01,
-      R00 = R00,
+      R11 = R11, R10 = R10, R01 = R01, R00 = R00,
       # Conteos diagnósticos
-      n_11_evento = n_11_evento,
-      n_11_total = n_11_total,
-      n_10_evento = n_10_evento,
-      n_10_total = n_10_total,
-      n_01_evento = n_01_evento,
-      n_01_total = n_01_total,
-      n_00_evento = n_00_evento,
-      n_00_total = n_00_total,
+      n_11_evento = n_11_evento, n_11_total = n_11_total,
+      n_10_evento = n_10_evento, n_10_total = n_10_total,
+      n_01_evento = n_01_evento, n_01_total = n_01_total,
+      n_00_evento = n_00_evento, n_00_total = n_00_total,
       insufficient_data = FALSE
     )
     
@@ -2728,6 +2727,7 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
   
   return(dt)
 }
+
 
 
 
