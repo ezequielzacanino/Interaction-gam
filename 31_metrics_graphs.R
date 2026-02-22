@@ -719,6 +719,8 @@ calculate_triplet_counts <- function(drug_a, drug_b, meddra_event, ade_dt) {
 # data.table expandido con métricas y conteos
 # 
 # Extrae métricas de listas y calcula conteos desde ade_raw
+# El problema es que los resultados de inyección no están en ade_raw
+# Entonces se extraen de los diagnostics del rsd
 
 expand_triplets_counts <- function(row, ade_dt) {
   # Extraer etapas
@@ -745,10 +747,29 @@ expand_triplets_counts <- function(row, ade_dt) {
   # Calcular conteos
   counts_dt <- calculate_triplet_counts(row$drugA, row$drugB, row$meddra, ade_dt)
   
+  # diagnostics[[1]]$injection_by_stage tiene nichd_num y N (inyectados por etapa)
+  inj_by_stage <- tryCatch({
+    diag <- row$diagnostics[[1]]
+    if (!is.null(diag) && !is.null(diag$injection_by_stage)) {
+      ibs <- diag$injection_by_stage
+      # Completar etapas faltantes con 0
+      full_stages <- data.table(nichd_num = 1:7)
+      ibs <- merge(full_stages, ibs, by = "nichd_num", all.x = TRUE)
+      ibs[is.na(N), N := 0L]
+      ibs[order(nichd_num)]$N
+    } else {
+      rep(0L, 7)
+    }
+  }, error = function(e) rep(0L, 7))
+                           
+  # Sumar inyectados a n_evento_ab y n_evento
+  counts_dt[, n_evento_ab := n_evento_ab + inj_by_stage]
+  counts_dt[, n_evento := n_evento + inj_by_stage]
+
   # Verificar longitudes consistentes
   n <- min(length(stages), length(gam_log_ior), nrow(counts_dt))
   if (n == 0) return(NULL)
-  
+                                                    
   # Combinar todo
   result <- data.table(
     triplet_id = row$triplet_id,
@@ -1023,3 +1044,4 @@ save_positive_graph <- function(p, triplet_id, dynamic, suffix) {
 
 # generación de gráficos de tripletes positivos
 generate_positive_graphs()
+
