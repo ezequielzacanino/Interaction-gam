@@ -1019,10 +1019,10 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
 # R10: riesgo con solo A
 # R01: riesgo con solo B
 # R00: riesgo sin A ni B (referencia)
-# RERI = R11 - R10 - R01 + R00
+# RERI = R11 - R10 - R01 + 1
 # IC90% usando método delta (propagación de varianzas)
 # Varianza de cada riesgo: Var(R) = p(1-p)/n
-# 5Varianza de RERI: suma de varianzas (asumiendo independencia)
+# Varianza de RERI: suma de varianzas (asumiendo independencia)
 
 calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
   
@@ -1074,89 +1074,86 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
     
     # Validación: todos los grupos deben tener datos
     if (n_11_total == 0 || n_10_total == 0 || n_01_total == 0 || n_00_total == 0) {
-      return(data.table(
+      data.table(      
         stage = nichd_num[1],
         RERI_classic = NA_real_,
         RERI_classic_lower90 = NA_real_,
         RERI_classic_upper90 = NA_real_,
         RERI_classic_se = NA_real_,
-        # Datos diagnósticos
-        n_11_evento = n_11_evento,
+        n_11_evento = n_11_evento, 
         n_11_total = n_11_total,
-        n_10_evento = n_10_evento,
+        n_10_evento = n_10_evento, 
         n_10_total = n_10_total,
-        n_01_evento = n_01_evento,
+        n_01_evento = n_01_evento, 
         n_01_total = n_01_total,
-        n_00_evento = n_00_evento,
+        n_00_evento = n_00_evento, 
         n_00_total = n_00_total,
         insufficient_data = TRUE
-      ))
+      )
+  }
+    else { # calculo de riesgos, proporciones
+      R11 <- n_11_evento / n_11_total
+      R10 <- n_10_evento / n_10_total
+      R01 <- n_01_evento / n_01_total
+      R00 <- n_00_evento / n_00_total
+    
+      if (R00 == 0) {
+        data.table(
+          stage = nichd_num[1],
+          RERI_classic = NA_real_,
+          RERI_classic_lower90 = NA_real_,
+          RERI_classic_upper90 = NA_real_,
+          RERI_classic_se = NA_real_,
+          n_11_evento = n_11_evento, n_11_total = n_11_total,
+          n_10_evento = n_10_evento, n_10_total = n_10_total,
+          n_01_evento = n_01_evento, n_01_total = n_01_total,
+          n_00_evento = n_00_evento, n_00_total = n_00_total,
+          insufficient_data = TRUE
+        )
+      } else {
+        reri_val <- R11/R00 - R10/R00 - R01/R00 + 1
+
+        # Varianzas binomiales de cada riesgo
+        var_r <- function(r, n) ifelse(r > 0 & r < 1, r*(1-r)/n, 0.25/n)
+        var_R11 <- var_r(R11, n_11_total)
+        var_R10 <- var_r(R10, n_10_total)
+        var_R01 <- var_r(R01, n_01_total)    
+        var_R00 <- var_r(R00, n_00_total)
+
+        # Varianza de RERI por delta method:
+        # RERI = (R11 - R10 - R01) / R00 + 1
+        # dRERI/dR11 =  1/R00
+        # dRERI/dR10 = -1/R00
+        # dRERI/dR01 = -1/R00
+        # dRERI/dR00 = -(R11 - R10 - R01) / R00^2
+        numerador <- R11 - R10 - R01
+        var_reri <- (var_R11 + var_R10 + var_R01) / R00^2 +
+          numerador^2 * var_R00 / R00^4
+        se_reri <- sqrt(var_reri)
+
+        # IC90%
+        z90 <- qnorm(0.95)
+        reri_lower90 <- reri_val - z90 * se_reri
+        reri_upper90 <- reri_val + z90 * se_reri
+
+        data.table(
+          stage = nichd_num[1],
+          RERI_classic = reri_val,
+          RERI_classic_lower90 = reri_lower90,
+          RERI_classic_upper90 = reri_upper90,
+          RERI_classic_se = se_reri,
+          # Riesgos individuales para diagnóstico
+          R11 = R11, R10 = R10, R01 = R01, R00 = R00,
+          # Conteos diagnósticos
+          n_11_evento = n_11_evento, n_11_total = n_11_total,
+          n_10_evento = n_10_evento, n_10_total = n_10_total,
+          n_01_evento = n_01_evento, n_01_total = n_01_total,
+          n_00_evento = n_00_evento, n_00_total = n_00_total,
+          insufficient_data = FALSE
+        ) 
+      }
     }
-    
-    # Cálculo de riesgos (proporciones)
-    R11 <- n_11_evento / n_11_total
-    R10 <- n_10_evento / n_10_total
-    R01 <- n_01_evento / n_01_total
-    R00 <- n_00_evento / n_00_total
-    
-    if (R00 == 0) {
-      return(data.table(
-        stage = nichd_num[1],
-        RERI_classic = NA_real_,
-        RERI_classic_lower90 = NA_real_,
-        RERI_classic_upper90 = NA_real_,
-        RERI_classic_se = NA_real_,
-        n_11_evento = n_11_evento, n_11_total = n_11_total,
-        n_10_evento = n_10_evento, n_10_total = n_10_total,
-        n_01_evento = n_01_evento, n_01_total = n_01_total,
-        n_00_evento = n_00_evento, n_00_total = n_00_total,
-        insufficient_data = TRUE
-      ))
-    }
-
-    reri_val <- R11/R00 - R10/R00 - R01/R00 + 1
-
-    # Varianzas binomiales de cada riesgo
-    var_r <- function(r, n) ifelse(r > 0 & r < 1, r*(1-r)/n, 0.25/n)
-    var_R11 <- var_r(R11, n_11_total)
-    var_R10 <- var_r(R10, n_10_total)
-    var_R01 <- var_r(R01, n_01_total)
-    var_R00 <- var_r(R00, n_00_total)
-
-    # Varianza de RERI por delta method:
-    # RERI = (R11 - R10 - R01) / R00 + 1
-    # dRERI/dR11 =  1/R00
-    # dRERI/dR10 = -1/R00
-    # dRERI/dR01 = -1/R00
-    # dRERI/dR00 = -(R11 - R10 - R01) / R00^2
-    numerador <- R11 - R10 - R01
-    var_reri <- (var_R11 + var_R10 + var_R01) / R00^2 +
-                numerador^2 * var_R00 / R00^4
-    se_reri <- sqrt(var_reri)
-
-    # IC90%
-    z90 <- qnorm(0.95)
-    reri_lower90 <- reri_val - z90 * se_reri
-    reri_upper90 <- reri_val + z90 * se_reri
-
-    data.table(
-      stage = nichd_num[1],
-      RERI_classic = reri_val,
-      RERI_classic_lower90 = reri_lower90,
-      RERI_classic_upper90 = reri_upper90,
-      RERI_classic_se = se_reri,
-      # Riesgos individuales para diagnóstico
-      R11 = R11, R10 = R10, R01 = R01, R00 = R00,
-      # Conteos diagnósticos
-      n_11_evento = n_11_evento, n_11_total = n_11_total,
-      n_10_evento = n_10_evento, n_10_total = n_10_total,
-      n_01_evento = n_01_evento, n_01_total = n_01_total,
-      n_00_evento = n_00_evento, n_00_total = n_00_total,
-      insufficient_data = FALSE
-    )
-    
   }, by = nichd_num]
-  
   # Ordenar por etapa
   setorder(resultados_por_etapa, nichd_num)
   
@@ -2727,6 +2724,7 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
   
   return(dt)
 }
+
 
 
 
