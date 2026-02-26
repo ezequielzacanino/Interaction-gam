@@ -363,6 +363,41 @@ datos_por_reduccion <- lapply(reduction_levels, expandir_datos)
 names(datos_por_reduccion) <- as.character(reduction_levels)
 
 ################################################################################
+# Exclusión de tripletes no detectables por inexistencia tras reducción
+################################################################################
+
+# Un triplete con N = 0 reportes A-B-Evento en el dataset reducido ya no existe:
+# que sea clasificado como negativo no es mérito del método, sino trivialidad.
+# Incluirlos infla artificialmente especificidad y VPN en los niveles de reducción altos.
+
+exclude_downsampled <- TRUE   
+
+if (exclude_downsampled) {
+  
+  datos_por_reduccion <- lapply(names(datos_por_reduccion), function(red) {
+    datos <- datos_por_reduccion[[red]]
+    
+    n_neg_antes <- uniqueN(datos$neg_high$triplet_id)
+    n_pos_antes <- uniqueN(datos$pos_high$triplet_id)
+    
+    # Negativos: excluir si el triplete no tiene ningún reporte A-B-Evento
+    datos$neg_high <- datos$neg_high[N > 0]
+    # Positivos: misma lógica (con inyección exitosa suelen tener N > 0, pero por consistencia)
+    datos$pos_high <- datos$pos_high[N > 0]
+    
+    n_neg_excluidos <- n_neg_antes - uniqueN(datos$neg_high$triplet_id)
+    n_pos_excluidos <- n_pos_antes - uniqueN(datos$pos_high$triplet_id)
+    
+    message(sprintf(
+      " Reducción %s%%: excluidos %d negativos + %d positivos (N = 0)",
+      red, n_neg_excluidos, n_pos_excluidos
+    )) 
+    datos
+  })
+  names(datos_por_reduccion) <- as.character(reduction_levels)
+}
+  
+################################################################################
 # Definición de métodos 
 ################################################################################
 
@@ -650,5 +685,6 @@ metrics_stage_intersection <- rbindlist(res_etapa_inter, fill = TRUE)
 fwrite(metrics_global_intersection, paste0(output_dir, "metrics_global_intersection.csv"))
 fwrite(metrics_dynamic_intersection, paste0(output_dir, "metrics_dynamic_intersection.csv"))
 fwrite(metrics_stage_intersection, paste0(output_dir, "metrics_stage_intersection.csv"))
+
 
 
