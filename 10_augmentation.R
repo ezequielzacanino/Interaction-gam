@@ -548,6 +548,26 @@ gc()
 # Procesamiento de negativos por lotes con sensibilidad
 ################################################################################
 
+  
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+  
+clusterExport(cl, c("fit_gam", "ade_raw_dt", "z90",
+                      "selected_negatives", "normalize_triplet_result", 
+                      "spline_individuales", "include_sex",
+                      "include_stage_sex", "k_spline", "nichd_spline", "include_nichd",
+                      "bs_type", "select", "method",
+                      "calculate_classic_ior", "calculate_classic_reri",
+                      "reduce_dataset_by_stage",
+                      "reduction_levels", "calc_basic_counts"), 
+                envir = environment())
+clusterEvalQ(cl, {
+   library(data.table)
+   library(mgcv)
+   library(MASS)
+   library(doRNG)
+})
+                                
 batch_size_neg <- 50
 n_batches <- ceiling(nrow(selected_negatives) / batch_size_neg)
 negatives_scores_list <- list()
@@ -560,25 +580,6 @@ for (batch in 1:n_batches) {
   
   message("\nLote ", batch, " / ", n_batches, 
           " (tripletes ", start_idx, "-", end_idx, ")")
-  
-  cl <- makeCluster(n_cores)
-  registerDoParallel(cl)
-  
-  clusterExport(cl, c("fit_gam", "ade_raw_dt", "z90",
-                      "selected_negatives", "normalize_triplet_result", 
-                      "spline_individuales", "include_sex",
-                      "include_stage_sex", "k_spline", "nichd_spline", "include_nichd",
-                      "bs_type", "select", "method",
-                      "calculate_classic_ior", "calculate_classic_reri",
-                      "reduce_dataset_by_stage",
-                      "reduction_levels", "calc_basic_counts"), 
-                envir = environment())
-  clusterEvalQ(cl, {
-    library(data.table)
-    library(mgcv)
-    library(MASS)
-    library(doRNG)
-  })
   
   batch_results <- foreach(
     idx = batch_indices,
@@ -855,9 +856,7 @@ for (batch in 1:n_batches) {
     combined_results <- rbindlist(all_results, fill = TRUE)
     return(combined_results)
   }
-  
-  stopCluster(cl)
-  
+    
   batch_results_clean <- Filter(function(x) !inherits(x, "error"), batch_results)
   batch_results_normalized <- lapply(batch_results_clean, function(x) {
     if (is.data.table(x) && "reduction_pct" %in% names(x)) {
@@ -876,6 +875,8 @@ for (batch in 1:n_batches) {
   message("Lote completado: ", sum(negatives_scores_list[[batch]]$model_success & 
                                      negatives_scores_list[[batch]]$reduction_pct == 0, na.rm = TRUE), " exitosos (base)")
 }
+
+stopCluster(cl)
 
 negatives_scores <- rbindlist(negatives_scores_list, fill = TRUE)
 rm(negatives_scores_list)
@@ -1416,3 +1417,4 @@ p_dynamics_diff_reri <- ggplot(
 )
 
 print(p_dynamics_diff_reri)
+
