@@ -1758,6 +1758,10 @@ expand_clean_all_metrics <- function(dt, label_val, null_thresholds_dt,
   if ("n_coadmin" %in% names(dt)) {  
     by_cols <- c(by_cols, "n_coadmin")
   }
+  if ("N" %in% names(dt)) {       
+    by_cols <- c(by_cols, "N")
+  }
+
 
   expanded <- dt[, {
     stages <- unlist(stage)
@@ -2724,6 +2728,7 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
   
   return(dt)
 }
+
 
 
 
