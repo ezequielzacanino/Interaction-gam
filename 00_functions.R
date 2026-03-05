@@ -1273,7 +1273,42 @@ bootstrap_dynamic_diff <- function(data, dynamic_type, stage_num, n_boot = 100) 
   )
 }
 
+################################################################################
+# Función de bootstrap por dinámica y etapa (RERI)
+################################################################################
 
+# Realiza bootstrap de diferencia de RERI entre dinámica y base (uniform)
+#
+# Parámetros:
+# data: data.table con columnas `dynamic`, `stage` y `reri`
+# dynamic_type: nombre de la dinámica
+# stage_num: número de etapa NICHD
+# n_boot: número de réplicas bootstrap (por defecto 100)
+#
+# Return:
+# data.table con estadísticos de bootstrap para la diferencia (media, sd, IC)
+
+bootstrap_dynamic_diff_reri <- function(data, dynamic_type, stage_num, n_boot = 100) {
+  
+  target_data <- data[dynamic == dynamic_type & stage == stage_num, reri]
+  uniform_data <- data[dynamic == "uniform" & stage == stage_num, reri]
+  
+  if (length(target_data) < 3 || length(uniform_data) < 3) {
+    return(data.table(mean_diff = NA_real_, ci_lower = NA_real_, ci_upper = NA_real_))
+  }
+  
+  boot_diffs <- replicate(n_boot, {
+    median(sample(target_data,  replace = TRUE)) -   # <-- median
+    median(sample(uniform_data, replace = TRUE))
+  })
+  
+  data.table(
+    mean_diff = median(boot_diffs, na.rm = TRUE),    # <-- median
+    ci_lower  = quantile(boot_diffs, 0.025, na.rm = TRUE),
+    ci_upper  = quantile(boot_diffs, 0.975, na.rm = TRUE)
+  )
+}
+                           
 ################################################################################
 # Función para procesar un solo triplete positivo con sensibilidad
 ################################################################################
@@ -2728,6 +2763,7 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
   
   return(dt)
 }
+
 
 
 
