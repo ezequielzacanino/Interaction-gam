@@ -1094,7 +1094,8 @@ fwrite(verification_data, paste0(output_dir, "injection_verification_hash.csv"))
 # positivos exitosos
 pos_for_dynamics <- positives_scores[
   model_success == TRUE & 
-  injection_success == TRUE & 
+  injection_success == TRUE &
+  reduction_pct == 0 &  
   !is.na(dynamic)
 ]
 
@@ -1268,9 +1269,6 @@ print(p_dynamics_diff)
 # Para ver si el modelo efectivamente detecta la forma de la dinámica inyectada 
 # usando RERI del GAM (riesgo absoluto) en lugar de IOR (odds ratio)
 
-# positivos exitosos 
-pos_for_dynamics <- positives_scores[model_success == TRUE & injection_success == TRUE & !is.na(dynamic)]
-
 # expansión de datos por etapa incluyendo RERI del GAM
 pos_dynamics_expanded_reri <- pos_for_dynamics[, {
   stages <- unlist(stage)
@@ -1417,4 +1415,5 @@ p_dynamics_diff_reri <- ggplot(
 )
 
 print(p_dynamics_diff_reri)
+
 
