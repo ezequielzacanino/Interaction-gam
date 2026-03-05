@@ -1,6 +1,6 @@
 ################################################################################
 # Script de visualización de gráficos facetados
-# Script: 31_metrics_graphs.R
+# Script: 41_graphs.R
 ################################################################################
 
 library(data.table)
@@ -519,6 +519,10 @@ ruta_ade_raw <- "./ade_raw.csv"
 ruta_drug_info <- "./drug.csv"
 output_dir_positive <- paste0(fig_output_dir, "positive_triplets/")
 
+# positivos detectados en dataset original
+ruta_network_graphs <- paste0("./results/", suffix, "/network/network_triplets_for_graphs.rds")
+
+
 # verifica existencia de archivos requeridos
 check_positive_files <- function() {
   archivos_requeridos <- c(ruta_positive_results, ruta_ade_raw, ruta_drug_info)
@@ -720,9 +724,9 @@ calculate_triplet_counts <- function(drug_a, drug_b, meddra_event, ade_dt) {
 # 
 # Extrae métricas de listas y calcula conteos desde ade_raw
 # El problema es que los resultados de inyección no están en ade_raw
-# Entonces se extraen de los diagnostics del rsd
+# Entonces se extraen de los diagnostics del rsd 
 
-expand_triplets_counts <- function(row, ade_dt) {
+expand_triplets_counts <- function(row, ade_dt, precomputed_counts = NULL) {
   # Extraer etapas
   stages <- unlist(row$stage)
   
@@ -744,24 +748,28 @@ expand_triplets_counts <- function(row, ade_dt) {
   cls_reri_lower <- unlist(row$RERI_classic_lower90)
   cls_reri_upper <- unlist(row$RERI_classic_upper90)
   
-  # Calcular conteos
-  counts_dt <- calculate_triplet_counts(row$drugA, row$drugB, row$meddra, ade_dt)
+  # bloque para admitir también los positivos de 40_network del dataset real
+  if (!is.null(precomputed_counts)) {
+    counts_dt <- precomputed_counts[triplet_id == row$triplet_id]
+    if (nrow(counts_dt) == 0)
+      counts_dt <- calculate_triplet_counts(row$drugA, row$drugB, row$meddra, ade_dt)
+  } else if (!is.null(row$counts_by_stage[[1]])) {
+    # Conteos embebidos directamente en la fila del objeto de red
+    counts_dt <- row$counts_by_stage[[1]]
+  } else {
+    counts_dt <- calculate_triplet_counts(row$drugA, row$drugB, row$meddra, ade_dt)
+  }
   
   # diagnostics[[1]]$injection_by_stage tiene nichd_num y N (inyectados por etapa)
-  inj_by_stage <- tryCatch({
+    inj_by_stage <- tryCatch({
     diag <- row$diagnostics[[1]]
     if (!is.null(diag) && !is.null(diag$injection_by_stage)) {
-      ibs <- diag$injection_by_stage
-      # Completar etapas faltantes con 0
-      full_stages <- data.table(nichd_num = 1:7)
-      ibs <- merge(full_stages, ibs, by = "nichd_num", all.x = TRUE)
+      ibs <- merge(data.table(nichd_num = 1:7), diag$injection_by_stage, by = "nichd_num", all.x = TRUE)
       ibs[is.na(N), N := 0L]
       ibs[order(nichd_num)]$N
-    } else {
-      rep(0L, 7)
-    }
+    } else { rep(0L, 7) }
   }, error = function(e) rep(0L, 7))
-                           
+  
   # Sumar inyectados a n_evento_ab y n_evento
   counts_dt[, n_evento_ab := n_evento_ab + inj_by_stage]
   counts_dt[, n_evento := n_evento + inj_by_stage]
@@ -769,7 +777,7 @@ expand_triplets_counts <- function(row, ade_dt) {
   # Verificar longitudes consistentes
   n <- min(length(stages), length(gam_log_ior), nrow(counts_dt))
   if (n == 0) return(NULL)
-                                                    
+  
   # Combinar todo
   result <- data.table(
     triplet_id = row$triplet_id,
@@ -815,7 +823,9 @@ expand_triplets_counts <- function(row, ade_dt) {
 # file_suffix: Sufijo para nombre de archivo
 # max_count: máximo esperado para escala logarítmica secundaria
 
-graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col, y_label, file_suffix, y_limit = 10, max_count = 5000) {
+graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col,
+                                  y_label, file_suffix, y_limit = 10, max_count = 5000,
+                                  plot_title = NULL, plot_subtitle = NULL) {
   # datos en formato largo
   counts_long <- melt(
     plot_dt,
@@ -832,7 +842,7 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col, y_la
   )
   counts_long[, metric_label := factor(metric_labels[as.character(metric)], levels = unname(metric_labels))]
   
-  # Calcular posiciones X para barras (dodging manual)
+  # calculo posiciones X para barras (con dodging manual)
   bar_w <- 0.12
   counts_long[, metric_idx := as.integer(metric)]
   counts_long[, x_center := stage_num + (metric_idx - 3) * bar_w]
@@ -891,7 +901,12 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col, y_la
     scale_y_continuous(
       name = y_label,
       limits = c(-y_limit, y_limit),
-      breaks = seq(-y_limit, y_limit, by = 2),
+      breaks = {
+        # breaks visibles independientemente del rango
+        step <- 10^floor(log10(y_limit / 4))
+        step <- step * if (y_limit / step > 8) 2 else 1
+        seq(-y_limit, y_limit, by = step)
+      },
       sec.axis = sec_axis(
         trans = transforma_desde_log,
         name = "N° Reportes (log)",
@@ -902,9 +917,10 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col, y_la
     scale_fill_brewer(palette = "Set2", name = "") +
     # Etiquetas
     labs(
-      title = paste0(plot_dt$dynamic[1], " | Triplete: ", plot_dt$triplet_id[1]),
-      subtitle = "A + B"
-    ) +
+      title = if (!is.null(plot_title)) plot_title
+      else paste0(plot_dt$dynamic[1], " | Triplete: ", plot_dt$triplet_id[1]),
+    subtitle = if (!is.null(plot_subtitle)) plot_subtitle else "A + B"
+  ) +
     theme_minimal() +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
@@ -919,129 +935,181 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col, y_la
 }
 
 ################################################################################
-# Generación
+# Generación de gráficos para tripletes positivos
 ################################################################################
 
-# Genera todos los gráficos para tripletes positivos
-# 
-# procesa cada triplete y genera 4 gráficos por cada uno (GAM yClásico para Log-IOR y RERI)
+# Guarda un gráfico de triplete positivo.
+#
+# Parámetros:
+# p          : objeto ggplot
+# triplet_id : id numérico del triplete
+# dynamic    : etiqueta de dinámica (usada en el nombre de archivo)
+# suffix     : sufijo identificador del método/métrica (e.g. "GAM_LogIOR")
+# dir        : directorio de salida; por defecto output_dir_positive
 
-generate_positive_graphs <- function() {
-  
-  # Crear directorio de salida
+save_positive_graph <- function(p, triplet_id, dynamic, suffix,
+                                 dir = output_dir_positive) {
+  safe_name <- sprintf("Triplete_%d_%s_%s", triplet_id, dynamic, suffix)
+  safe_name <- gsub("[^a-zA-Z0-9._-]", "_", safe_name)
+  ggsave(
+    filename = file.path(dir, paste0(safe_name, ".png")),
+    plot     = p,
+    width    = 10,
+    height   = 7,
+    dpi      = 300,
+    bg       = "white"
+  )
+}
+
+# Genera gráficos para tripletes positivos del pipeline de augmentation.
+#
+# Fuente  : positive_triplets_results.rds  (reduction_pct == 0, línea de base)
+# Conteos : calculados on-the-fly desde ade_raw.csv con calculate_triplet_counts()
+# Métricas: GAM-LogIOR, GAM-RERI, Clásico-LogIOR, Clásico-RERI
+
+
+generate_positive_graphs_from_results <- function() {
   dir.create(output_dir_positive, showWarnings = FALSE, recursive = TRUE)
-  
-  # Cargar datos
-  datos <- carga_datos_positive(ruta_positive_results, ruta_ade_raw)
-  dt <- datos$results
-  ade_raw_dt <- datos$ade_raw
-  
-  # tabla de traducción y preprocesado
-  translation_table <- translation_table(ruta_drug_info)
-  
-  ade_processed <- translate_ade(ade_raw_dt, translation_table)
-  
-  # Loop de generación
+
+  datos         <- carga_datos_positive(ruta_positive_results, ruta_ade_raw)
+  dt            <- datos$results
+  trans_table   <- translation_table(ruta_drug_info)
+  ade_processed <- translate_ade(datos$ade_raw, trans_table)
+
   pb <- txtProgressBar(min = 0, max = nrow(dt), style = 3)
   generated_graphs <- 0
-  
-  for (i in 1:nrow(dt)) {
+
+  for (i in seq_len(nrow(dt))) {
     tryCatch({
       row <- dt[i]
-      
-      # expando con conteos
-      plot_dt <- expand_triplets_counts(row, ade_processed)
-      
+
+      ptitle    <- paste0(row$dynamic, " | Triplete: ", row$triplet_id)
+      psubtitle <- "A + B"
+
+      plot_dt <- expand_triplets_counts(row, ade_dt = ade_processed, precomputed_counts = NULL)
       if (is.null(plot_dt) || nrow(plot_dt) == 0) {
-        message(sprintf("\n Salteando triplete %d: sin datos expandibles", i))
+        message(sprintf("\n  Salteando triplete %d: sin datos expandibles", i))
         next
       }
-      # GAM-Log-IOR
+
       if (any(is.finite(plot_dt$gam_log_ior_lower))) {
-        p <- graph_metrics_counts(
-          plot_dt = plot_dt,
-          metric_col = "gam_log_ior",
-          lower_col = "gam_log_ior_lower",
-          upper_col = "gam_log_ior_upper",
-          y_label = "Log-IOR (GAM, IC 90%)",
-          file_suffix = "GAM_LogIOR"
-        )
+        p <- graph_metrics_counts(plot_dt, "gam_log_ior", "gam_log_ior_lower", "gam_log_ior_upper",
+                                   "Log-IOR (GAM, IC 90%)", "GAM_LogIOR",
+                                   plot_title = ptitle, plot_subtitle = psubtitle)
         save_positive_graph(p, plot_dt$triplet_id[1], plot_dt$dynamic[1], "GAM_LogIOR")
         generated_graphs <- generated_graphs + 1
       }
-      
-      # GAM-RERI
+
       if (any(is.finite(plot_dt$gam_reri_lower))) {
-        p <- graph_metrics_counts(
-          plot_dt = plot_dt,
-          metric_col = "gam_reri",
-          lower_col = "gam_reri_lower",
-          upper_col = "gam_reri_upper",
-          y_label = "RERI (GAM, IC 90%)",
-          file_suffix = "GAM_RERI"
-        )
+        reri_vals_gam <- c(plot_dt$gam_reri, plot_dt$gam_reri_lower, plot_dt$gam_reri_upper)
+        reri_max_abs_gam <- max(abs(reri_vals_gam[is.finite(reri_vals_gam)]), na.rm = TRUE)
+        y_limit_gam_reri <- max(ceiling(reri_max_abs_gam * 1.2), 2)
+        p <- graph_metrics_counts(plot_dt, "gam_reri", "gam_reri_lower", "gam_reri_upper",
+                             "RERI (GAM, IC 90%)", "GAM_RERI",
+                             y_limit = y_limit_gam_reri,
+                             plot_title = ptitle, plot_subtitle = psubtitle)
         save_positive_graph(p, plot_dt$triplet_id[1], plot_dt$dynamic[1], "GAM_RERI")
         generated_graphs <- generated_graphs + 1
       }
-      
-      # Clásico-Log-IOR
+
       if (any(is.finite(plot_dt$cls_log_ior_lower))) {
-        p <- graph_metrics_counts(
-          plot_dt = plot_dt,
-          metric_col = "cls_log_ior",
-          lower_col = "cls_log_ior_lower",
-          upper_col = "cls_log_ior_upper",
-          y_label = "Log-IOR (Estratificado, IC 90%)",
-          file_suffix = "Classic_LogIOR"
-        )
+        p <- graph_metrics_counts(plot_dt, "cls_log_ior", "cls_log_ior_lower", "cls_log_ior_upper",
+                                   "Log-IOR (Estratificado, IC 90%)", "Classic_LogIOR",
+                                   plot_title = ptitle, plot_subtitle = psubtitle)
         save_positive_graph(p, plot_dt$triplet_id[1], plot_dt$dynamic[1], "Classic_LogIOR")
         generated_graphs <- generated_graphs + 1
       }
-      
-      # Clásico-RERI
+
       if (any(is.finite(plot_dt$cls_reri_lower))) {
-        p <- graph_metrics_counts(
-          plot_dt = plot_dt,
-          metric_col = "cls_reri",
-          lower_col = "cls_reri_lower",
-          upper_col = "cls_reri_upper",
-          y_label = "RERI (Estratificado, IC 90%)",
-          file_suffix = "Classic_RERI"
-        )
+        reri_vals_cls <- c(plot_dt$cls_reri, plot_dt$cls_reri_lower, plot_dt$cls_reri_upper)
+        reri_max_abs_cls <- max(abs(reri_vals_cls[is.finite(reri_vals_cls)]), na.rm = TRUE)
+        y_limit_cls_reri <- max(ceiling(reri_max_abs_cls * 1.2), 2)
+        p <- graph_metrics_counts(plot_dt, "cls_reri", "cls_reri_lower", "cls_reri_upper",
+                             "RERI (Estratificado, IC 90%)", "Classic_RERI",
+                             y_limit = y_limit_cls_reri,
+                             plot_title = ptitle, plot_subtitle = psubtitle)
         save_positive_graph(p, plot_dt$triplet_id[1], plot_dt$dynamic[1], "Classic_RERI")
         generated_graphs <- generated_graphs + 1
       }
-      
+
     }, error = function(e) {
       message(sprintf("\n  Error en triplete %d: %s", i, e$message))
     })
-    
-    # voy limpiando memoria
+
     if (i %% 50 == 0) gc()
     setTxtProgressBar(pb, i)
   }
   close(pb)
-  
-  return(generated_graphs)
+  message(sprintf("\n  Gráficos generados: %d", generated_graphs))
+  return(invisible(generated_graphs))
 }
 
-save_positive_graph <- function(p, triplet_id, dynamic, suffix) {
-  # creacion de nombres
-  safe_name <- sprintf("Triplete_%d_%s_%s", triplet_id, dynamic, suffix)
-  safe_name <- gsub("[^a-zA-Z0-9._-]", "_", safe_name)
-  
-  png_path <- file.path(output_dir_positive, paste0(safe_name, ".png"))
-  
-  ggsave(
-    filename = png_path,
-    plot = p,
-    width = 10,
-    height = 7,
-    dpi = 300,
-    bg = "white"
-  )
+# Genera gráficos para tripletes del dataset ORIGINAL detectados como positivos en 40_network.
+#
+# Fuente  : network_triplets_for_graphs.rds
+#           — ya filtrado a positivos (triplet_id %in% positives$triplet_id en 40_network.R)
+#           — incluye drugA_name, drugB_name, meddra_name resueltos por 40_network.R
+#           — incluye counts_by_stage preembebidos (no se recalculan aquí)
+# Título  : "<drugA_name> + <drugB_name> | Triplete: <id>"   /   "<meddra_name>"
+# Métrica : solo GAM-LogIOR
+#           (RERI y métricas clásicas son NULL en este pipeline; se omiten)
+# Salida  : subcarpeta "network/" dentro de output_dir_positive
+
+generate_positive_graphs_from_network <- function() {
+  if (!file.exists(ruta_network_graphs)) {
+    message("Archivo de red no encontrado: ", ruta_network_graphs)
+    return(invisible(0L))
+  }
+
+  output_dir_net <- file.path(output_dir_positive, "network")
+  dir.create(output_dir_net, showWarnings = FALSE, recursive = TRUE)
+
+  dt <- readRDS(ruta_network_graphs)
+  message(sprintf("  Tripletes del dataset original a graficar: %d", nrow(dt)))
+
+  pb <- txtProgressBar(min = 0, max = nrow(dt), style = 3)
+  generated_graphs <- 0
+
+  for (i in seq_len(nrow(dt))) {
+    tryCatch({
+      row <- dt[i]
+
+      # drugA_name, drugB_name y meddra_name están garantizados por 40_network.R
+      ptitle    <- paste0(row$drugA_name, " + ", row$drugB_name,
+                          " | Triplete: ", row$triplet_id)
+      psubtitle <- row$meddra_name
+
+      # Los conteos vienen en counts_by_stage; ade_dt no es necesario
+      plot_dt <- expand_triplets_counts(row, ade_dt = NULL, precomputed_counts = NULL)
+      if (is.null(plot_dt) || nrow(plot_dt) == 0) {
+        message(sprintf("\n  Salteando triplete %d: sin datos expandibles", i))
+        next
+      }
+
+      if (any(is.finite(plot_dt$gam_log_ior_lower))) {
+        p <- graph_metrics_counts(plot_dt, "gam_log_ior", "gam_log_ior_lower", "gam_log_ior_upper",
+                                   "Log-IOR (GAM, IC 90%)", "GAM_LogIOR",
+                                   plot_title = ptitle, plot_subtitle = psubtitle)
+        save_positive_graph(p, plot_dt$triplet_id[1], plot_dt$dynamic[1], "GAM_LogIOR",
+                             dir = output_dir_net)
+        generated_graphs <- generated_graphs + 1
+      }
+
+    }, error = function(e) {
+      message(sprintf("\n  Error en triplete %d: %s", i, e$message))
+    })
+
+    if (i %% 50 == 0) gc()
+    setTxtProgressBar(pb, i)
+  }
+  close(pb)
+  message(sprintf("\n  Gráficos generados: %d", generated_graphs))
+  return(invisible(generated_graphs))
 }
 
-# generación de gráficos de tripletes positivos
-generate_positive_graphs()
+# Ejecución
+generate_positive_graphs_from_network()
+generate_positive_graphs_from_results()
+
+
 
