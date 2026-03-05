@@ -206,7 +206,7 @@ p_null_vs_obs_reri <- ggplot(
   geom_density(alpha = 0.5, adjust = 1.5) +
   facet_wrap(~ stage_name, scales = "free_y", ncol = 4) +
   scale_fill_manual(values = color_palette) +
-  scale_x_continuous(limits = c(-0.25, 0.25)) + # limito para visualizar mejor las distribuciones
+  scale_x_continuous(limits = c(-10, 10)) + # limito para visualizar mejor las distribuciones
   labs(
     title = sprintf("Distribución nula vs señales detectadas (%s)", percentil),
     x = "RERI - Límite inferior IC 90%",
@@ -685,6 +685,7 @@ metrics_stage_intersection <- rbindlist(res_etapa_inter, fill = TRUE)
 fwrite(metrics_global_intersection, paste0(output_dir, "metrics_global_intersection.csv"))
 fwrite(metrics_dynamic_intersection, paste0(output_dir, "metrics_dynamic_intersection.csv"))
 fwrite(metrics_stage_intersection, paste0(output_dir, "metrics_stage_intersection.csv"))
+
 
 
 
