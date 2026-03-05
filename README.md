@@ -78,7 +78,7 @@ event ~ s(nichd_num, by=drugA, bs="cs", k=7) +
 **Interaction Metrics:**
 ```
 log(IOR) = lp₁₁ - lp₁₀ - lp₀₁ + lp₀₀           # predictions obtained with predict()
-RERI = p₁₁ - p₁₀ - p₀₁ + p₀₀                   # probabilities obtained with plogis()
+RERI = p₁₁ - p₁₀ - p₀₁ + 1                     # probabilities obtained with plogis()
 ```
 
 Where:
