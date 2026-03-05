@@ -25,8 +25,8 @@ This repository contains the scripts used for the validation of a Generalized Ad
 10_augmentation.R            # Data generation and results.
 20_null.R                    # Generation of the null distribution.
 30_metrics.R                 # Results analysis.
-31_metrics_graphs.R          # Generation of plots.
-40_network.R                 # Network analysis
+40_network.R                 # Network analysis.
+41_graphs.R                  # Generation of plots.
 ```
 
 ## Methodology 
@@ -42,7 +42,7 @@ This repository contains the scripts used for the validation of a Generalized Ad
 - 5 sets of 500 positive triplets (uniform excluded from final analysis) 
 
 **Negative control set:**
-- Random selection of 500 candidate triplets (mutually exclusivy from the positive set), with similar reporting characteristics as the positive set (same drugs and events)
+- Random selection of 10000 candidate triplets (mutually exclusivy from the positive set), with similar reporting characteristics as the positive set (same drugs and events)
 - Model fitting of the negative set
 
 **Injection Formula:**
