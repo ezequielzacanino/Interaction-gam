@@ -226,14 +226,17 @@ fwrite(candidatos_triplets, paste0(output_dir, "triplets_metadata.csv"))
 # carga si ya se hizo
 cache_file <- paste0(output_dir, "all_triplets_results.rds")
 
+# si ya se corrió, usar
 if (file.exists(cache_file)) {
   all_triplets_results <- readRDS(cache_file)
 } else {
+  # procesamiento por baches
   all_results <- list()
   batch_size <- 500
   batch_num <- 0L
   n_total <- nrow(candidatos_triplets)
 
+  # clusters para disminuir tiempo
   cl <- makeCluster(n_cores)
   registerDoParallel(cl)
   clusterExport(cl, c("fit_gam", "ade_raw_dt",
@@ -242,6 +245,7 @@ if (file.exists(cache_file)) {
                 envir = environment())
   clusterEvalQ(cl, { library(data.table); library(mgcv); library(MASS) })
 
+  # bucle para ajustar cada triplete dentro del bache
   for (start in seq(1, n_total, by = batch_size)) {
     batch_num <- batch_num + 1L
     batch_rows <- candidatos_triplets[start:min(start + batch_size - 1, n_total)]
@@ -249,6 +253,7 @@ if (file.exists(cache_file)) {
     message(sprintf(" Lote %d tripletes %d-%d de %d",
                     batch_num, start, start + nrow(batch_rows) - 1, n_total))
 
+    # resultados por bache
     batch_res <- foreach(idx = seq_len(nrow(batch_rows)),
                          .packages = c("data.table", "mgcv", "MASS"),
                          .errorhandling = "pass") %dopar% {
@@ -271,7 +276,7 @@ if (file.exists(cache_file)) {
       base <- data.table(triplet_id = rowt$triplet_id, drugA = rowt$drugA,
                          drugB = rowt$drugB, meddra = rowt$meddra,
                          n_reports = rowt$N)
-      if (is.null(res$success) || !res$success)
+      if (is.null(res$success) || !res$success) # para ver fallos
         return(cbind(base, model_success = FALSE))
 
       cbind(base, data.table(
@@ -286,8 +291,10 @@ if (file.exists(cache_file)) {
       ))
     }), fill = TRUE)
 
+    # checkpoints por si se para
     all_results[[batch_num]] <- batch_dt
     saveRDS(batch_dt, paste0(output_dir, "checkpoint_batch_", sprintf("%04d", batch_num), ".rds"))
+    # liberación de memoria
     rm(batch_res, batch_dt); gc()
   }
 
@@ -749,12 +756,17 @@ ggsave(paste0(output_dir, "fig_04_hubs_bar.png"), plot_hubs, width = 12, height 
 # visualización droga-gen
 ################################################################################
 
+# cantidad a visualizar
 v_n_drugs <- 20
 v_n_genes <- 10
 
+# genes con mayor grado en la red biológica
 vec_top_genes <- names(head(sort(degree(graph_bio_gene)[V(graph_bio_gene)$type == "gene"], decreasing = TRUE), v_n_genes))
+# filtro fármacos con al menos una asociación compartida
 vec_drugs_with_genes <- unique(dt_edges_bio$from)
+# cálculo de degree en la capa estadística para drogas con soporte biológico
 vec_deg_drugs <- vec_degree_stat[names(vec_degree_stat) %in% vec_drugs_with_genes]
+# selección de los hubs farmacológicos
 vec_top_drugs <- names(head(sort(vec_deg_drugs, decreasing = TRUE), v_n_drugs))
 
 # Unir aristas Mixtas
@@ -775,16 +787,27 @@ vec_labels_mix <- ifelse(V(graph_mixed)$type == "gene", V(graph_mixed)$name,
 # función base para distintas visualizaciones
 ###########
 
+# función para visualización de grafos mixtos
 plot_mixed_base <- function(layout_type) {
-  set.seed(9427)
+  # colores
+  vec_colors_mix <- ifelse(V(graph_mixed)$type == "gene", "#E74C3C", "#5DADE2")
+  # escalado
+  vec_node_sizes <- ifelse(
+    V(graph_mixed)$type == "drug",
+    V(graph_mixed)$degree * 1.8,
+    V(graph_mixed)$degree
+  )
+  # integro aristas de capa estadística con aristas biol´gocias
   ggraph(as_tbl_graph(graph_mixed), layout = layout_type) +
     geom_edge_link(aes(color = type, width = type, alpha = type)) +
-    geom_node_point(aes(size = degree), color = vec_colors_mix, alpha = 0.9) +
+    geom_node_point(aes(size = vec_node_sizes), color = vec_colors_mix, alpha = 0.9) +
     geom_node_text(aes(label = vec_labels_mix), repel = TRUE, size = 3) +
+    # colores
     scale_edge_color_manual(values = c("Drug-Gene" = "#E67E22", "DDI" = "#BDC3C7")) +
     scale_edge_width_manual(values = c("Drug-Gene" = 0.4, "DDI" = 0.4), guide = "none") +
     scale_edge_alpha_manual(values = c("Drug-Gene" = 0.35, "DDI" = 0.75), guide = "none") +
-    scale_size(range = c(2, 10)) + theme_graph()
+    scale_size(range = c(5, 20), name = "degree") +
+    theme_graph()
 }
 
 # kamada kawai
@@ -1008,3 +1031,81 @@ dt_metrics_summary <- data.table(
 
 print(dt_metrics_summary)
 fwrite(dt_metrics_summary, paste0(output_dir, "metrics_versus_twosides.csv"))
+
+################################################################################
+# Pares novedosos con sustento biológico
+################################################################################
+
+# Pares novedosos (no en TWOSIDES) con al menos 1 gen compartido
+novel_bio <- merge(
+  dt_comp_details[status == "Nuevo", .(atc_A, atc_B, name_A, name_B)],
+  dt_edge_metrics[n_shared > 0, .(
+    atc_A = pmin(drugA, drugB),
+    atc_B = pmax(drugA, drugB),
+    n_shared_genes = n_shared,
+    jaccard
+  )],
+  by = c("atc_A", "atc_B")
+)[order(-n_shared_genes)]
+
+message(sprintf("Pares novedosos con sustento biológico: %d", nrow(novel_bio)))
+print(novel_bio)
+
+# Para cada par novedoso ver que tripletes lo detectaron
+novel_pairs_ids <- novel_bio[, .(atc_A, atc_B)]
+
+triplets_novel <- merge(
+  novel_pairs_ids,
+  positives[, .(
+    atc_A = pmin(as.character(drugA), as.character(drugB)),
+    atc_B = pmax(as.character(drugA), as.character(drugB)),
+    triplet_id,
+    meddra,
+    n_stages_positive
+  )],
+  by = c("atc_A", "atc_B")
+)
+
+# nombres de drogas y evento MedDRA
+triplets_novel <- merge(triplets_novel, drug_names_map[, .(atc_A = as.character(atc_concept_id), name_A = drug_name)], by = "atc_A", all.x = TRUE)
+triplets_novel <- merge(triplets_novel, drug_names_map[, .(atc_B = as.character(atc_concept_id), name_B = drug_name)], by = "atc_B", all.x = TRUE)
+triplets_novel <- merge(triplets_novel, meddra_names, by = "meddra", all.x = TRUE)
+
+triplets_novel <- triplets_novel[order(name_A, name_B, -n_stages_positive)]
+print(triplets_novel[, .(name_A, name_B, meddra_name, n_stages_positive, triplet_id)])
+
+# Para cada par novedoso qué genes compartidos hay
+shared_genes_novel <- rbindlist(lapply(seq_len(nrow(novel_bio)), function(i) {
+  id_A <- novel_bio$atc_A[i]
+  id_B <- novel_bio$atc_B[i]
+  genes_A <- drug_gene[atc_concept_id == id_A, gene_symbol]
+  genes_B <- drug_gene[atc_concept_id == id_B, gene_symbol]
+  shared <- intersect(genes_A, genes_B)
+  if (length(shared) == 0) return(NULL)
+  data.table(
+    name_A = novel_bio$name_A[i],
+    name_B = novel_bio$name_B[i],
+    shared_gene = shared
+  )
+}))
+
+print(shared_genes_novel[order(name_A, name_B)])
+
+# merge para ver par tripletes y genes
+novel_summary <- merge(
+  triplets_novel[, .(name_A, name_B, meddra_name, n_stages_positive)],
+  shared_genes_novel[, .(
+    name_A, name_B,
+    genes = paste(shared_gene, collapse = ", ")
+  ), by = .(name_A, name_B)],
+  by = c("name_A", "name_B")
+)[order(name_A, name_B, -n_stages_positive)]
+
+print(novel_summary)
+
+# Exportar
+fwrite(novel_bio, paste0(output_dir, "novel_pairs_with_bio_support.csv"))
+fwrite(triplets_novel, paste0(output_dir, "novel_pairs_triplets.csv"))
+fwrite(shared_genes_novel, paste0(output_dir, "novel_pairs_shared_genes.csv"))
+fwrite(novel_summary, paste0(output_dir, "novel_pairs_full_summary.csv"))
+
