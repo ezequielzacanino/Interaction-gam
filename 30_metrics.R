@@ -403,13 +403,17 @@ if (exclude_downsampled) {
 
 # métodos con tipo de score mapeado 
 metodos <- list(
-  list(nombre = "GAM-logIOR", tipo = "IOR", es_gam = TRUE, 
+  list(nombre = "GAM-logIOR", tipo = "IOR", null = TRUE, 
        score_type = "gam_log_ior_lower90", score_type_auc = "gam_log_ior"),
-  list(nombre = "GAM-RERI", tipo = "RERI", es_gam = TRUE, 
+  list(nombre = "GAM-RERI", tipo = "RERI", null = TRUE, 
        score_type = "gam_reri_lower90", score_type_auc = "gam_reri"),
-  list(nombre = "Estratificado-IOR", tipo = "IOR", es_gam = FALSE, 
+  list(nombre = "GAM-logIOR_nom", tipo = "IOR",  null = FALSE,  
+       score_type = "gam_log_ior_lower90", score_type_auc = "gam_log_ior"),
+  list(nombre = "GAM-RERI_nom",   tipo = "RERI", null = FALSE,
+       score_type = "gam_reri_lower90",    score_type_auc = "gam_reri"),
+  list(nombre = "Estratificado-IOR", tipo = "IOR", null = FALSE, 
        score_type = "classic_log_ior_lower90", score_type_auc = "classic_log_ior"),
-  list(nombre = "Estratificado-RERI", tipo = "RERI", es_gam = FALSE, 
+  list(nombre = "Estratificado-RERI", tipo = "RERI", null = FALSE, 
        score_type = "classic_reri_lower90", score_type_auc = "classic_reri")
 )
 
@@ -437,7 +441,7 @@ for (red_pct in reduction_levels) {
     neg_global <- datos$neg_high[nichd %in% etapas_alto_reporte]
 
     dt_global <- rbind(datos$pos_high, neg_global, fill = TRUE)
-    dt_global <- aplicar_deteccion(dt_global, met$nombre, met$tipo, use_null = met$es_gam)
+    dt_global <- aplicar_deteccion(dt_global, met$nombre, met$tipo, use_null = met$null)
     
     # Agregar a nivel triplete para métricas globales
     metrics_global <- calcular_metricas_simple(dt_global, n_boot, agregar_por_triplete = TRUE,  # acá TRUE para evitar doble conteo
@@ -461,7 +465,7 @@ for (red_pct in reduction_levels) {
       neg_dyn <- datos$neg_high[nichd %in% etapas_altas]
   
       dt_dyn <- rbind(pos_dyn, neg_dyn, fill = TRUE)
-      dt_dyn <- aplicar_deteccion(dt_dyn, met$nombre, met$tipo, use_null = met$es_gam)
+      dt_dyn <- aplicar_deteccion(dt_dyn, met$nombre, met$tipo, use_null = met$null)
       
       metrics_dyn <- calcular_metricas_simple(dt_dyn, n_boot, agregar_por_triplete = TRUE, 
         score_type = met$score_type, score_type_auc = met$score_type_auc) 
@@ -485,7 +489,7 @@ for (red_pct in reduction_levels) {
       neg_stage <- datos$neg_high[stage_num == s]
       
       dt_stage <- rbind(pos_stage, neg_stage, fill = TRUE)
-      dt_stage <- aplicar_deteccion(dt_stage, met$nombre, met$tipo, use_null = met$es_gam)
+      dt_stage <- aplicar_deteccion(dt_stage, met$nombre, met$tipo, use_null = met$null)
       
       # NO agregar - cada fila es una etapa específica
       metrics_stage <- calcular_metricas_simple(dt_stage, n_boot, agregar_por_triplete = FALSE, 
@@ -535,7 +539,7 @@ for (red_pct in reduction_levels) {
 
     pos_fil <- datos$pos_high[triplet_id %in% ids_filtrar]
     dt_global <- rbind(pos_fil, neg_global, fill = TRUE)
-    dt_global <- aplicar_deteccion(dt_global, met$nombre, met$tipo, use_null = met$es_gam)
+    dt_global <- aplicar_deteccion(dt_global, met$nombre, met$tipo, use_null = met$null)
     
     metrics_global <- calcular_metricas_simple(dt_global, n_boot, agregar_por_triplete = TRUE, 
       score_type = met$score_type, score_type_auc = met$score_type_auc)
@@ -555,7 +559,7 @@ for (red_pct in reduction_levels) {
       
       neg_dyn <- datos$neg_high[nichd %in% etapas_altas]  
       dt_dyn <- rbind(pos_dyn, neg_dyn, fill = TRUE) 
-      dt_dyn <- aplicar_deteccion(dt_dyn, met$nombre, met$tipo, use_null = met$es_gam)
+      dt_dyn <- aplicar_deteccion(dt_dyn, met$nombre, met$tipo, use_null = met$null)
       
       metrics_dyn <- calcular_metricas_simple(dt_dyn, n_boot, agregar_por_triplete = TRUE, 
         score_type = met$score_type, score_type_auc = met$score_type_auc)
@@ -576,7 +580,7 @@ for (red_pct in reduction_levels) {
       neg_stage <- datos$neg_high[stage_num == s]
       
       dt_stage <- rbind(pos_stage, neg_stage, fill = TRUE)
-      dt_stage <- aplicar_deteccion(dt_stage, met$nombre, met$tipo, use_null = met$es_gam)
+      dt_stage <- aplicar_deteccion(dt_stage, met$nombre, met$tipo, use_null = met$null)
       
       metrics_stage <- calcular_metricas_simple(dt_stage, n_boot, agregar_por_triplete = FALSE, 
         score_type = met$score_type, score_type_auc = met$score_type_auc)
@@ -637,7 +641,7 @@ for (red_pct in reduction_levels) {
 
     pos_int <- datos$pos_high[triplet_id %in% triplets_intersection]
     dt_global <- rbind(pos_int, neg_global, fill = TRUE)
-    dt_global <- aplicar_deteccion(dt_global, met$nombre, met$tipo, use_null = met$es_gam)
+    dt_global <- aplicar_deteccion(dt_global, met$nombre, met$tipo, use_null = met$null)
     
     metrics_global <- calcular_metricas_simple(dt_global, n_boot, agregar_por_triplete = TRUE, score_type = met$score_type, score_type_auc = met$score_type_auc)
     metrics_global[, `:=`( method = met$nombre, reduction_pct = red_pct, dataset = "intersection" )]
@@ -652,7 +656,7 @@ for (red_pct in reduction_levels) {
       neg_dyn <- datos$neg_high[nichd %in% etapas_altas]  
   
       dt_dyn <- rbind(pos_dyn, neg_dyn, fill = TRUE)
-      dt_dyn <- aplicar_deteccion(dt_dyn, met$nombre, met$tipo, use_null = met$es_gam)
+      dt_dyn <- aplicar_deteccion(dt_dyn, met$nombre, met$tipo, use_null = met$null)
       
       metrics_dyn <- calcular_metricas_simple(dt_dyn, n_boot, agregar_por_triplete = TRUE, 
         score_type = met$score_type, score_type_auc = met$score_type_auc)
@@ -668,7 +672,7 @@ for (red_pct in reduction_levels) {
       neg_stage <- datos$neg_high[stage_num == s]
       
       dt_stage <- rbind(pos_stage, neg_stage, fill = TRUE)
-      dt_stage <- aplicar_deteccion(dt_stage, met$nombre, met$tipo, use_null = met$es_gam)
+      dt_stage <- aplicar_deteccion(dt_stage, met$nombre, met$tipo, use_null = met$null)
       
       metrics_stage <- calcular_metricas_simple(dt_stage, n_boot, agregar_por_triplete = FALSE, 
         score_type = met$score_type, score_type_auc = met$score_type_auc)
