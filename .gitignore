@@ -1,0 +1,23 @@
+# ignora carpetas y todo por defecto
+**/
+*
+
+# permito el .gitignore
+!.gitignore
+
+# permito el README 
+!README.md
+
+# solo permito scripts finales
+!00_functions.R
+!01_theme.R
+!10_augmentation.R
+!20_null.R
+!30_metrics.R
+!40_network.R
+!41_graphs.R
+
+# ignorar otros
+.DS_Store
+.Rhistory
+*.tmp
