@@ -1,33 +1,33 @@
 ################################################################################
-# Script de generación de datos semisintéticos con análisis de sensibilidad
+# Semi-synthetic data generation script with sensitivity analysis
 # Script 10_augmentation
 ################################################################################
 
 source("00_functions.R", local = TRUE)
 
 ################################################################################
-# Configuración
+# Configuration
 ################################################################################
 
-# Parámetros para inyección
+# Control set parameters
 n_pos <- 500
 n_neg <- 10000
 lambda_fc <- 0.75
 dinamicas <- c("uniform","increase","decrease","plateau","inverse_plateau")
 z90 <- qnorm(0.95)
 
-# Parámetros de filtrado para construcción de tripletes
+# Filtering parameters for triplet construction
 min_reports_triplet <- 2         
 min_nichd_with_rep <- 2          
 all_nichd_rep <- FALSE           
 max_events_per_pair <- 10000
 
-# Parámetros de sensibilidad
+# Sensitivity analysis parameters
 reduction_levels <- seq(10, 90, by = 10)  # 10%, 20% ... 90%
 
-# Parámetros de procesamiento por lotes
-batch_size_pos <- 50  # Tamaño de lote para positivos 
-save_interval <- 1    # Guardar cada X lotes completados
+# Batch processing parameters
+batch_size_pos <- 50    # Batch size for positive triplets
+save_interval <- 1   # Save every X completed batches
 
 n_null_reports <- 100000  
 
@@ -35,14 +35,14 @@ output_dir <- paste0("./results/", suffix, "/augmentation_results/")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 ################################################################################
-# Carga de datos
+# Data loading
 ################################################################################
 
 ade_raw_dt <- fread(ruta_ade_raw)
 
 cols_req <- c("safetyreportid", "atc_concept_id", "meddra_concept_id", "nichd")
 
-# por si incluyo sexo en la formula gam
+# In case sex is included in the GAM formula
 if (include_sex) {
   cols_req <- c(cols_req, "sex")
 }
@@ -60,7 +60,7 @@ if (include_sex) {
 message(sprintf("Dataset %s filas", format(nrow(ade_raw_dt), big.mark = ",")))
 
 ################################################################################
-# Preprocesamiento 
+# Preprocessing 
 ################################################################################
 
 drug_info_original <- fread(ruta_drug_info)
@@ -82,7 +82,7 @@ cat(sprintf("IDs únicos: %d\n", uniqueN(translation_table$canonical_id)))
 
 ade_raw_dt[, atc_concept_id := as.character(atc_concept_id)]
 
-# unificación de drogas con mismo compuesto activo pero distinto vehiculo
+# Unify drugs sharing the same active compound but different formulations
 ade_raw_dt <- merge(
   ade_raw_dt, 
   translation_table[, .(atc_concept_id, canonical_id)], 
@@ -100,10 +100,10 @@ ade_raw_dt[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
 ade_raw_dt[, nichd_num := as.integer(nichd)]
 
 ################################################################################
-# Construcción de tripletes candidatos 
+# Candidate triplet construction
 ################################################################################
 
-# obtengo drogas por reporte y evento
+# Extract unique drugs and events per report
 drugs_by_report <- unique(ade_raw_dt[, .(safetyreportid, atc_concept_id)])
 events_by_report <- unique(ade_raw_dt[, .(safetyreportid, meddra_concept_id)])
 
@@ -150,10 +150,10 @@ if (all_nichd_rep) {
     N >= min_reports_triplet & 
     n_stages >= min_nichd_with_rep
   ]
-  message(sprintf("Filtro flexible: mínimo %d etapas con reportes", min_nichd_with_rep)) # opción de poner filtro con todas las etapas
+  message(sprintf("Filtro flexible: mínimo %d etapas con reportes", min_nichd_with_rep)) # option to apply strict filter requiring all stages
 }
 
-# datos de resultado de filtrado 
+# Filtering outcome summary
 message("\nEstadísticas de filtrado:")
 message(sprintf("  Total candidatos iniciales: %s", 
                 format(nrow(trip_summary), big.mark = ",")))
@@ -176,13 +176,13 @@ message(sprintf("Tripletes post diversificación: %d", nrow(candidatos_pos)))
 n_pos_final <- min(n_pos, nrow(candidatos_pos))
 positivos_sel <- candidatos_pos[sample(.N, n_pos_final)]
 
-# características de candidatos
+# Summary of selected positive candidates
 message(sprintf("\nTripletes positivos seleccionados: %d", nrow(positivos_sel)))
 message(sprintf("  Reportes promedio: %.1f", mean(positivos_sel$N)))
 message(sprintf("  Etapas promedio: %.1f", mean(positivos_sel$n_stages)))
 
 ################################################################################
-# Selección de positivos 
+# Positive triplet selection
 ################################################################################
 
 pos_meta_base <- positivos_sel[, .(drugA, drugB, meddra, N)]
@@ -208,7 +208,7 @@ pos_meta[, is_top30 := triplet_id %in% top30_ids]
 fwrite(pos_meta, paste0(output_dir, "positive_triplets_metadata.csv"))
 
 ################################################################################
-# Cálculo de coadministración por etapa para positivos 
+# Co-administration counts by NICHD stage for positive triplets
 ################################################################################
 
 coadmin_stage_pos_list <- lapply(1:nrow(pos_meta), function(i) {
@@ -237,14 +237,14 @@ rm(coadmin_stage_pos_list, coadmin_stage_pos)
 gc()
 
 ################################################################################
-# Procesado en lotes de tripletes positivos con análisis de sensibilidad
+# Batch processing of positive triplets with sensitivity analysis
 ################################################################################
 
-# preparo cluster para lote
+# Set up parallel cluster for batch processing
 cl <- makeCluster(n_cores)
 registerDoParallel(cl)
   
-# exporto funciones y datos necesarios
+# Export required functions and data to cluster workers
 clusterExport(cl, c("process_single_positive", "fit_reduced_model", 
   "reduce_dataset_by_stage", "inject_signal", "fit_gam",
   "calculate_classic_ior", "calculate_classic_reri", "calc_basic_counts",
@@ -263,20 +263,20 @@ clusterEvalQ(cl, {
 
 n_batches <- ceiling(nrow(pos_meta) / batch_size_pos)
 
-# detecta checkpoints previos
+# Detect existing checkpoints from previous runs
 existing_cp_pos <- list.files(
   output_dir,
   pattern = "checkpoint_positives_batch_\\d+\\.rds",
   full.names = TRUE
 )
 
-# si ya hay checkpoints, carga el último y lo rehace por si está corrupto
+# If checkpoints exist, load all but the last one and re-run the last batch in case it was corrupted
 if (length(existing_cp_pos) > 0) {
   cp_batches_pos <- sort(as.integer(
     gsub(".*checkpoint_positives_batch_(\\d+)\\.rds", "\\1", existing_cp_pos)
   ))
-  last_cp_pos  <- max(cp_batches_pos)
-  redo_batch   <- last_cp_pos          # rehacer el último por si está corrupto
+  last_cp_pos <- max(cp_batches_pos)
+  redo_batch <- last_cp_pos           # rerun the last batch in case it was corrupted
   load_batches <- cp_batches_pos[cp_batches_pos < redo_batch]
   
   message(sprintf(
@@ -284,7 +284,7 @@ if (length(existing_cp_pos) > 0) {
     last_cp_pos
   ))
   
-  # Cargar lotes anteriores al que se va a rehacer
+  # Load batches prior to the one being rerun
   if (length(load_batches) > 0) {
     positives_scores_list <- setNames(
       lapply(load_batches, function(b)
@@ -298,7 +298,7 @@ if (length(existing_cp_pos) > 0) {
   
   start_batch_pos <- redo_batch
 } else {
-  # Sin checkpoints arranque de 0
+  # No checkpoints found: start from scratch
   positives_scores_list <- list()
   start_batch_pos <- 1
 }
@@ -312,14 +312,14 @@ for (batch in start_batch_pos:n_batches) {
 
   message(sprintf("Lote %d / %d (tripletes %d-%d)", batch, n_batches, start_idx, end_idx))  
   
-  # Procesar lote en paralelo
+  # Process batch in parallel
   batch_results <- foreach(
     idx = batch_indices,
     .packages = c("data.table", "mgcv"),
     .errorhandling = "pass",
     .verbose = FALSE,
     .options.RNG = 7113
-  ) %dorng% {   # cambio de %dopar% a %dorng% para reproductibilidad del loop
+  ) %dorng% {    # switched from %dopar% to %dorng% for reproducible parallel RNG
     process_single_positive(
       idx, pos_meta, ade_raw_dt, reduction_levels,
       spline_individuales, include_sex, include_stage_sex,
@@ -327,55 +327,55 @@ for (batch in start_batch_pos:n_batches) {
       base_seed = 7113)
   }
   
-  # limpieza y normalización de resultados del lote
+  # Clean and normalize batch results
   batch_results_clean <- Filter(function(x) !inherits(x, "error"), batch_results)
   
   if (length(batch_results_clean) > 0) {
     batch_dt <- rbindlist(batch_results_clean, fill = TRUE)
     positives_scores_list[[batch]] <- batch_dt
-    # info de lotes que se van procesando
+    # Progress info for each processed batch
     message(sprintf("Lote %d completado: %d tripletes exitosos (base)", batch, sum(batch_dt$model_success & batch_dt$reduction_pct == 0, na.rm = TRUE)))
     
-    # guardo checkpoint cada save_interval lotes o al final
+    # Save checkpoint every save_interval batches or at the last one
     if (batch %% save_interval == 0 || batch == n_batches) {
       checkpoint_file <- paste0(output_dir, "checkpoint_positives_batch_", batch, ".rds")
       saveRDS(batch_dt, checkpoint_file)
       message(sprintf("Checkpoint guardado: %s", checkpoint_file))
     }
   }
-  # libero memoria
+  # Free memory after each batch
   rm(batch_results, batch_results_clean, batch_dt)
   gc(verbose = FALSE)
 }
 stopCluster(cl)
 
-# Combinar todos los lotes
+# Combine all batch results into a single data.table
 positives_scores <- rbindlist(positives_scores_list, fill = TRUE)
 rm(positives_scores_list)
 gc()
 
-# datos de injección
+# Summary of injection results
 message(sprintf("Total tripletes procesados: %d", nrow(positives_scores[reduction_pct == 0])))
 message(sprintf("Exitosos (base): %d", sum(positives_scores$model_success & positives_scores$reduction_pct == 0, na.rm = TRUE)))
 
-# Guardar resultados por nivel de reducción
+# Save results separately for each reduction level
 for (red_pct in c(0, reduction_levels)) {
   suffix_file <- if(red_pct == 0) "" else paste0("_", red_pct)
   
   subset_data <- positives_scores[reduction_pct == red_pct]
   
   if (nrow(subset_data) > 0) {
-    # guardo RDS
+    # Save as RDS
     saveRDS(subset_data, paste0(output_dir, "positive_triplets_results", suffix_file, ".rds"))
     
-    # versión CSV
+    # CSV version
     subset_csv <- copy(subset_data)
     
     if ("diagnostics" %in% names(subset_csv)) {
       subset_csv[, diagnostics := NULL]
     }
     
-    # Aplanar listas
+    # Flatten list columns to comma-separated strings
     list_cols <- names(subset_csv)[sapply(subset_csv, is.list)]
     
     for (col in list_cols) {
@@ -392,17 +392,17 @@ gc()
 
 pos_success <- positives_scores[reduction_pct == 0 & injection_success == TRUE]
 
-# datos de injecciones exitosas
+# Summary of successful injections
 message("\nPositivos exitosos (base): ", sum(positives_scores$model_success & positives_scores$injection_success & positives_scores$reduction_pct == 0, na.rm = TRUE))
 
 ################################################################################
-# Selección de datos negativos
+# Negative triplet selection
 ################################################################################
 
 drugs_from_pos <- unique(c(pos_meta$drugA, pos_meta$drugB))
 events_from_pos <- unique(pos_meta$meddra)
 
-# características iniciales
+# Initial pool summary
 message(sprintf("Pool de drogas: %d", length(drugs_from_pos)))
 message(sprintf("Pool de eventos: %d", length(events_from_pos)))
 
@@ -484,19 +484,19 @@ neg_counts_by_stage <- unique(
               .(drugA, drugB, meddra, nichd_num, safetyreportid)]
 )[, .(n_reports = .N), by = .(drugA, drugB, meddra, nichd_num)]
 
-# renombro
+# Rename column
 setnames(neg_counts_by_stage, "nichd_num", "nichd")
 
-# orden de niveles_nich (objeto se crea en 00_functions)
+# Map NICHD stage names to numeric indices (niveles_nichd is defined in 00_functions.R)
 nichd_to_num <- setNames(1:7, niveles_nichd)
 neg_counts_by_stage[, nichd_num := nichd_to_num[nichd]]
 
-# 4. Calcular n_stages_with_data directamente (sin dcast)
+# 4. Compute n_stages_with_data directly (no dcast needed)
 stage_counts_summary <- neg_counts_by_stage[, .(
   n_stages_with_data = uniqueN(nichd_num[n_reports > 0])
 ), by = .(drugA, drugB, meddra)]
 
-# merge con candidatos_neg
+# Merge stage counts back into negative candidate table
 setkey(candidatos_neg, drugA, drugB, meddra)
 setkey(stage_counts_summary, drugA, drugB, meddra)
 
@@ -509,7 +509,7 @@ candidatos_neg_full <- merge(
 
 candidatos_neg_filtered <- candidatos_neg_full[n_stages_with_data >= min_nichd_with_rep]
 
-# características de candidatos
+# Summary of filtered negative candidates
 message(sprintf("\nCandidatos negativos filtrados: %d (de %d)", nrow(candidatos_neg_filtered), nrow(candidatos_neg)))
 
 n_neg_final <- min(n_neg, nrow(candidatos_neg_filtered))
@@ -517,7 +517,7 @@ selected_negatives <- candidatos_neg_filtered[sample(.N, n_neg_final)]
 
 selected_negatives[, triplet_id := 1:.N]
 
-# características de pool negativo seleccionado
+# Summary of selected negative pool
 message(sprintf("\nNegativos seleccionados: %d", nrow(selected_negatives)))
 message(sprintf("  Reportes promedio: %.1f", mean(selected_negatives$N)))
 message(sprintf("  Etapas promedio: %.1f", mean(selected_negatives$n_stages_with_data)))
@@ -547,7 +547,7 @@ fwrite(coadmin_stage_neg, paste0(output_dir, "negative_coadmin_by_stage.csv"))
 rm(coadmin_stage_neg_list, coadmin_stage_neg)
 gc()
 
-# Preproceso reducción del dataset y lo cargo luego a los workers
+# Pre-compute reduced datasets for each sensitivity level; passed to workers later
 reduced_datasets <- setNames(
   lapply(reduction_levels, function(red_pct) {
     reduce_dataset_by_stage(ade_raw_dt, red_pct, seed = 7113)
@@ -556,7 +556,7 @@ reduced_datasets <- setNames(
 )
 
 ################################################################################
-# Procesamiento de negativos por lotes con sensibilidad
+# Batch processing of negative triplets with sensitivity analysis
 ################################################################################
 
 cl <- makeCluster(n_cores)  
@@ -591,8 +591,8 @@ if (length(existing_cp_neg) > 0) {
   cp_batches_neg <- sort(as.integer(
     gsub(".*checkpoint_negatives_batch_(\\d+)\\.rds", "\\1", existing_cp_neg)
   ))
-  last_cp_neg    <- max(cp_batches_neg)
-  redo_batch_neg <- last_cp_neg         # rehacer el último por si está corrupto
+  last_cp_neg <- max(cp_batches_neg)
+  redo_batch_neg <- last_cp_neg           # rerun the last batch in case it was corrupted
   load_batches_neg <- cp_batches_neg[cp_batches_neg < redo_batch_neg]
   
   if (length(load_batches_neg) > 0) {
@@ -636,13 +636,13 @@ for (batch in start_batch_neg:n_batches) {
       calc_basic_counts(ade_raw_dt, rowt$drugA, rowt$drugB, rowt$meddra)
     }, error = function(e) list(n_events_coadmin = NA, n_events_total = NA, n_coadmin = NA))
     
-    # Loop de sensibilidad para negativos
+    # Downsampling loop for negative triplets
     all_results <- list()
     
-    # Resultado base (0% reducción) - con dataset original completo
+    # Base result (0% reduction) — fit on the full original dataset
     base_result <- tryCatch({
       
-      # Ajuste en dataset original
+      # Fit GAM on the original dataset
       model_res <- fit_gam(
         drugA_id = rowt$drugA,
         drugB_id = rowt$drugB,
@@ -756,12 +756,12 @@ for (batch in start_batch_neg:n_batches) {
     
     all_results[[1]] <- base_result
     
-    # Loop sobre niveles de reducción
+    # Loop over reduction levels for downsampling analysis
     for (red_pct in reduction_levels) {
       
-      # recalcular conteos con el dataset reducido
+      # Recompute counts using the reduced dataset
       reduced_result <- tryCatch({
-        # Cargar dataset original reducidos previamente
+        # Load the pre-computed reduced dataset for this reduction level
         ade_reduced <- reduced_datasets[[as.character(red_pct)]]
         counts_red <- tryCatch({
              calc_basic_counts(ade_reduced, rowt$drugA, rowt$drugB, rowt$meddra)
@@ -906,14 +906,14 @@ for (batch in start_batch_neg:n_batches) {
   
   negatives_scores_list[[batch]] <- batch_dt
   
-  # Guardar checkpoint de negativos (cada save_interval lotes o al final)
+  # Save negative checkpoint every save_interval batches or at the last one
   if (batch %% save_interval == 0 || batch == n_batches) {
     checkpoint_file_neg <- paste0(output_dir, "checkpoint_negatives_batch_", batch, ".rds")
     saveRDS(batch_dt, checkpoint_file_neg)
     message(sprintf("Checkpoint guardado: %s", checkpoint_file_neg))
   }
   
-  # Capturar conteo antes de limpiar batch_dt
+  # Capture success count before removing batch_dt from memory
   n_exitosos_batch <- sum(batch_dt$model_success & batch_dt$reduction_pct == 0, na.rm = TRUE)
 
   rm(batch_results, batch_results_clean, batch_results_normalized, batch_dt)
@@ -928,14 +928,14 @@ negatives_scores <- rbindlist(negatives_scores_list, fill = TRUE)
 rm(negatives_scores_list)
 gc()
 
-# guardado de resultados negativos por nivel de reducción
+# Save negative results per reduction level
 for (red_pct in c(0, reduction_levels)) {
   suffix_file <- if(red_pct == 0) "" else paste0("_", red_pct)
   
   subset_data <- negatives_scores[reduction_pct == red_pct]
   
   if (nrow(subset_data) > 0) {
-    # Preparar CSV
+    # Prepare CSV version
     subset_csv <- copy(subset_data)
     
     list_cols <- names(subset_csv)[sapply(subset_csv, is.list)]
@@ -957,42 +957,42 @@ gc()
 message("\nNegativos exitosos (base): ", sum(negatives_scores$model_success & negatives_scores$reduction_pct == 0, na.rm = TRUE))
 
 ################################################################################
-# Creación de pool nulo 
+# Null pool creation
 ################################################################################
-# Es por muestreo aleatorio simple, total después se permutan 
+# Simple random sampling; drug/event labels are permuted later to destroy real associations
 
-# Parámetros de muestreo
+# Sampling parameters
 n_null_reports <- 100000             
 
-# Obtengo todos los reportes únicos disponibles
+# Get all unique report IDs available in the dataset
 all_reports <- unique(ade_raw_dt$safetyreportid)
 
-# No se excluyen reportes que puedan estar en positivos porque:
-# La permutación de drogas/eventos destruye las asociaciones reales
-# Maximiza el tamaño de muestra disponible para la distribución nula
+# Reports potentially overlapping with the positive set are not excluded because:
+# Drug/event permutation destroys any real associations in this pool
+# This maximizes the available sample size for the null distribution
 selected_null_reports <- sample(all_reports, n_null_reports)
 
-# metadata del pool nulo (safetyreportid, etapa NICHD)
+# Null pool metadata: report ID and NICHD stage
 null_pool_meta <- unique(ade_raw_dt[
   safetyreportid %in% selected_null_reports,
   .(safetyreportid, nichd, nichd_num)
 ])
 
-# Verificación de distribución de reportes por etapa
+# Verify report distribution across NICHD stages
 stage_distribution <- null_pool_meta[, .N, by = nichd][order(nichd)]
 message("\nDistribución de reportes por etapa NICHD:")
 print(stage_distribution)
 
-# Habría que agregar más diagnósticos para ver que los reportes seleccionados sean representativos (en etapa sobretodo)
-# Al ser un dataset "grande", probabilisticamente seguro es representativo pero bueno
+# Additional diagnostics could be added to verify that selected reports are representative (especially by stage)
+# Given the large dataset size, representativeness is probabilistically very likely, but worth noting
 
-# Guardo metadata
+# Save null pool metadata
 fwrite(null_pool_meta, paste0(output_dir, "null_pool_reports_metadata.csv"))
 
 message("Total de reportes: ", nrow(null_pool_meta))
 
 ################################################################################
-# Comparación 
+# Positive vs. Negative comparison
 ################################################################################
 
 pos_success <- positives_scores[model_success == TRUE & injection_success == TRUE & reduction_pct == 0]
@@ -1073,7 +1073,7 @@ if (nrow(pos_success) > 0 && nrow(neg_success) > 0) {
 }
 
 ################################################################################
-# Resumen final
+# Final summary
 ################################################################################
 
 summary_stats <- data.table(
@@ -1113,7 +1113,7 @@ print(summary_stats)
 fwrite(summary_stats, paste0(output_dir, "summary_statistics.csv"))
 
 ################################################################################
-# Análisis de sensibilidad agregado 
+# Aggregated sensitivity analysis
 ################################################################################
 
 sensitivity_summary <- rbind(
@@ -1139,16 +1139,16 @@ print(sensitivity_summary)
 fwrite(sensitivity_summary, paste0(output_dir, "sensitivity_analysis_summary.csv"))
 
 ################################################################################
-# Detección de dinámicas
+# Dynamics detection
 ################################################################################
 
-# Para ver si el modelo efectivamente detecta la forma de la dinámica inyectada
+# Checks whether the model correctly recovers the shape of the injected dynamic
 
-# Para no correr todo el análisis de 0 
+# Skip rerunning the full pipeline from scratch
 ruta_pos_results <- paste0("./results/", suffix, "/augmentation_results/positive_triplets_results.rds")
 positives_scores <- readRDS(ruta_pos_results)
 
-# positivos exitosos
+# Filter to successfully processed positive triplets
 pos_for_dynamics <- positives_scores[
   model_success == TRUE & 
   injection_success == TRUE &
@@ -1156,12 +1156,12 @@ pos_for_dynamics <- positives_scores[
   !is.na(dynamic)
 ]
 
-# Expando datos por etapa
+# Expand per-stage data from list columns
 pos_dynamics_expanded <- pos_for_dynamics[, {
   stages <- unlist(stage)
   log_iors <- unlist(log_ior)
   
-  # valido longitudes
+  # Validate list lengths before indexing
   n <- min(length(stages), length(log_iors))
   
   if (n > 0) {
@@ -1174,26 +1174,26 @@ pos_dynamics_expanded <- pos_for_dynamics[, {
   }
 }, by = .(triplet_id, dynamic, fold_change)]
 
-# agrego stage_name después de expandir
+# Add stage name labels after expansion
 pos_dynamics_expanded[, stage_name := niveles_nichd[stage]]
 
-# calculo el promedio de log-IOR, clasificado por dinámica y etapa
+# Compute mean log-IOR by injected dynamic and developmental stage
 dynamics_summary <- pos_dynamics_expanded[, .(
   mean_log_ior = mean(log_ior, na.rm = TRUE),
   sd_log_ior = sd(log_ior, na.rm = TRUE),
   n_triplets = uniqueN(triplet_id)
 ), by = .(dynamic, stage)]
 
-# agregar stage_name a summary
+# Add stage name labels to summary table
 dynamics_summary[, stage_name := niveles_nichd[stage]]
 
-# Tomo uniform como baseline para calcular la diferencia
+# Use the uniform dynamic as the reference baseline
 uniform_baseline <- dynamics_summary[dynamic == "uniform", .(
   stage, 
   baseline_log_ior = mean_log_ior
 )]
 
-# diferencias vs uniform
+# Compute differences relative to the uniform baseline
 dynamics_diff <- merge(
   dynamics_summary[dynamic != "uniform"],
   uniform_baseline,
@@ -1212,12 +1212,12 @@ print(dynamics_diff[order(dynamic, stage), .(
 )])
 
 ################################################################################
-# Bootstrap para intervalos de confianza
+# Bootstrap confidence intervals
 ################################################################################
 
 n_boot <- 100
 
-# aplico bootstrap a todas las combinaciones
+# Apply bootstrap to all dynamic-stage combinations
 dynamics_nonuniform <- unique(pos_dynamics_expanded[dynamic != "uniform", dynamic])
 stages <- 1:7
 
@@ -1228,7 +1228,7 @@ bootstrap_results <- rbindlist(pblapply(dynamics_nonuniform, function(dyn) {
   }))
 }))
 
-# merge con datos principales
+# Merge bootstrap CIs back into the main differences table
 dynamics_with_ci <- merge(
   dynamics_diff,
   bootstrap_results,
@@ -1249,10 +1249,10 @@ recovery_stats <- dynamics_with_ci[, .(
 print(recovery_stats)
 
 ################################################################################
-# Gráfico
+# Visualization
 ################################################################################
 
-# colores para dinámicas
+# Color palette for injected dynamics
 dynamic_colors <- c(
   "increase" = "#E41A1C",
   "decrease" = "#377EB8", 
@@ -1270,7 +1270,7 @@ nichd_labels <- c(
   "late_adolescence" = "Adolescencia tardía"
 )
 
-# Diferencias vs uniform con intervalo de confianza
+# Delta log-IOR vs. uniform dynamic with bootstrap confidence intervals
 p_dynamics_diff <- ggplot(
   dynamics_with_ci[!is.na(mean_diff)],
   aes(x = stage_name, y = log_ior_diff, color = dynamic, group = dynamic)
@@ -1320,18 +1320,18 @@ ggsave(
 print(p_dynamics_diff)
 
 ################################################################################
-# Detección de dinámicas con RERI
+# Dynamics detection using RERI
 ################################################################################
 
-# Para ver si el modelo efectivamente detecta la forma de la dinámica inyectada 
-# usando RERI del GAM (riesgo absoluto) en lugar de IOR (odds ratio)
-
-# expansión de datos por etapa incluyendo RERI del GAM
+# Checks whether the model correctly recovers the shape of the injected dynamic
+# using GAM-derived RERI (absolute risk scale) rather than IOR (odds ratio scale)
+ 
+# Expand per-stage data including GAM-derived RERI values
 pos_dynamics_expanded_reri <- pos_for_dynamics[, {
   stages <- unlist(stage)
-  reri_vals <- unlist(reri_values)  # RERI del GAM
+  reri_vals <- unlist(reri_values)  # GAM-derived RERI
   
-  # valido longitudes
+  # Validate list lengths
   n <- min(length(stages), length(reri_vals))
   
   if (n > 0) {
@@ -1344,26 +1344,26 @@ pos_dynamics_expanded_reri <- pos_for_dynamics[, {
   }
 }, by = .(triplet_id, dynamic, fold_change)]
 
-# stage_name después de expandir
+# Add stage name labels after expansion
 pos_dynamics_expanded_reri[, stage_name := niveles_nichd[stage]]
 
-# calculo el promedio de RERI, clasificado por dinámica y etapa
+# Compute median RERI by injected dynamic and developmental stage
 dynamics_summary_reri <- pos_dynamics_expanded_reri[, .(
-  mean_reri = median(reri, na.rm = TRUE),   # median, no mean
-  sd_reri = mad(reri, na.rm = TRUE),       # MAD en lugar de SD
+  mean_reri = median(reri, na.rm = TRUE),   # median, not mean
+  sd_reri = mad(reri, na.rm = TRUE),        # MAD instead of SD
   n_triplets = uniqueN(triplet_id)
 ), by = .(dynamic, stage)]
 
-# stage_name en summary
+# Add stage name labels to RERI summary
 dynamics_summary_reri[, stage_name := niveles_nichd[stage]]
 
-# Reemplazar el bloque de uniform_baseline_reri
+# Compute uniform baseline for RERI (mirrors the log-IOR baseline block above)
 uniform_baseline_reri <- dynamics_summary_reri[dynamic == "uniform", .(
   stage,
-  baseline_reri = mean_reri   # ya es mediana, el nombre queda igual
+  baseline_reri = mean_reri   # already median; keeping name for consistency
 )]
 
-# diferencias vs uniform (delta RERI)
+# Differences vs. uniform baseline (delta RERI)
 dynamics_diff_reri <- merge(
   dynamics_summary_reri[dynamic != "uniform"],
   uniform_baseline_reri,
@@ -1382,10 +1382,10 @@ print(dynamics_diff_reri[order(dynamic, stage), .(
 )])
 
 ################################################################################
-# Bootstrap para IC (RERI)
+# Bootstrap confidence intervals for RERI
 ################################################################################
 
-# aplico bootstrap a todas las combinaciones
+# Apply bootstrap to all dynamic-stage combinations (RERI)
 dynamics_nonuniform_reri <- unique(pos_dynamics_expanded_reri[dynamic != "uniform", dynamic])
 stages_reri <- 1:7
 
@@ -1396,7 +1396,7 @@ bootstrap_results_reri <- rbindlist(pblapply(dynamics_nonuniform_reri, function(
   }))
 }))
 
-# merge con datos principales
+# Merge bootstrap CIs into the RERI differences table
 dynamics_with_ci_reri <- merge(
   dynamics_diff_reri,
   bootstrap_results_reri,
@@ -1417,10 +1417,10 @@ recovery_stats_reri <- dynamics_with_ci_reri[, .(
 print(recovery_stats_reri)
 
 ################################################################################
-# Gráfico de Delta RERI (vs uniform)
+# Delta RERI plot (vs. uniform dynamic)
 ################################################################################F
 
-# Diferencias vs uniform con intervalo de confianza para RERI
+# Delta RERI vs. uniform dynamic with bootstrap confidence intervals
 
 p_dynamics_diff_reri <- ggplot(
   dynamics_with_ci_reri[!is.na(mean_diff)],

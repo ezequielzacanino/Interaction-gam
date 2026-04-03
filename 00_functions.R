@@ -9,7 +9,7 @@
 ################################################################################
 
 # Project setup
-setwd("D:/Bioestadística/gam-farmacovigilancia")
+setwd("D:/Bioestadística/Interaction-gam")
 set.seed(7113)
 
 # Load all pipeline libraries using pacman
