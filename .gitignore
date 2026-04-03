@@ -19,6 +19,7 @@
 !30_metrics.R
 !40_network.R
 !41_graphs.R
+!README.md
 
 # 5. Ignorar archivos temporales y del sistema
 .DS_Store
