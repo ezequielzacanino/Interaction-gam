@@ -1,8 +1,8 @@
-# 1. Ignora todo por defecto
+# ignora carpetas extra todo por defecto
 *
-
-# 2. Permitir el propio .gitignore y archivos de configuración de R
-!.gitignore
+/*/
+**/
+# Permitir el propio .gitignore y archivos de configuración de R
 !.Rhistory
 !.Rproj.user/
 !*.Rproj
