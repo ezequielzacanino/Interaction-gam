@@ -1,23 +1,23 @@
 ################################################################################
-# Script de generación de distribución nula
+# Null distribution generation script
 # Script 20_null
 ################################################################################
 
 source("00_functions.R", local = TRUE)
 
 ################################################################################
-# Configuración
+# Configuration
 ################################################################################
 
-# Parámetros para permutación
+# Permutation parameters
 perm_events <- TRUE   
 perm_drugs <- TRUE   
 
 # Parámetros para muestreo
 max_triplets_per_permutation <- 150  
 min_reports_triplet <- 2
-target_total_triplets <- 10000       # Objetivo de tripletes
-max_permutation_attempts <- 15000    # intentos máximos
+target_total_triplets <- 10000       # Target number of triplets
+max_permutation_attempts <- 15000   # Maximum number of attempts
 
 seed_base <- 7113
 
@@ -26,38 +26,38 @@ ruta_null_pool_meta <- paste0("./results/", suffix, "/augmentation_results/null_
 output_dir <- paste0("./results/", suffix, "/null_distribution_results/")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-batch_size <- 5  # para que no colapse por llenado de memoria
-checkpoint_frequency <- 2  # guardo resultados cada 5 lotes
+batch_size <- 5  # keeps memory from overflowing
+checkpoint_frequency <- 2    # save results every 5 batches
 
 ################################################################################
-# Carga de datos
+# Data loading
 ################################################################################
 
 ade_raw_dt <- fread(ruta_ade_raw)
 
-# columnas requeridas
+# Required columns
 cols_req <- c("safetyreportid", "atc_concept_id", "meddra_concept_id", "nichd")
 
-# si se usa sex
+# Include sex column if applicable
 if (include_sex) {
   cols_req <- c(cols_req, "sex")
 }
 
-# preprocesado de tipo de variables
+# Variable type preprocessing
 ade_raw_dt[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
 ade_raw_dt[, nichd_num := as.integer(nichd)]
 
-# Procesar sex si está presente
+# Process sex column if present
 if (include_sex) {
 
   ade_raw_dt[, sex := toupper(trimws(sex))]
   ade_raw_dt[sex == "M", sex := "MALE"]
   ade_raw_dt[sex == "F", sex := "FEMALE"]
   
-  # factor con niveles estándar
+  # Factor with standard levels
   ade_raw_dt[, sex := factor(sex, levels = c("MALE", "FEMALE"))]
   
-  # distribucion
+  # Distribution summary
   sex_summary <- ade_raw_dt[, .(n = .N), by = sex]
   message("\n Distribución:")
   print(sex_summary)
@@ -65,7 +65,7 @@ if (include_sex) {
 
 null_pool_meta <- fread(ruta_null_pool_meta)
 
-# Preparo listas de drogas y eventos
+# Build drug and event lookup lists from the null pool reports
 null_pool_data <- ade_raw_dt[safetyreportid %in% null_pool_meta$safetyreportid]
 
 drugs_by_report <- unique(null_pool_data[!is.na(atc_concept_id), 
@@ -86,14 +86,14 @@ pool_reports_meta[is.na(events), events := list(integer(0))]
 message(sprintf("Pool nulo: %s reportes", format(nrow(pool_reports_meta), big.mark = ",")))
 
 ################################################################################
-# Loop principal con paralelización
+# Main loop with parallelization
 ################################################################################
 
-# Configuración de cluster
+# Cluster setup
 cl <- makeCluster(n_cores)
 registerDoParallel(cl)
 
-# objetos necesarios 
+# Export required objects to worker nodes
 clusterExport(cl, c(
   "ade_raw_dt", "pool_reports_meta", "niveles_nichd",
   "permute_pool", "reintroduce_permuted_reports", "make_triplets",
@@ -105,23 +105,23 @@ clusterExport(cl, c(
   "calculate_classic_ior", "calculate_classic_reri"
 ), envir = environment())
 
-# librerías
+# Load required libraries on each worker
 clusterEvalQ(cl, {
   library(data.table)
   library(mgcv)
   library(MASS)
 })
 
-# Variables de control
+# Control variables
 n_batches <- ceiling(max_permutation_attempts / batch_size)
 triplets_collected <- 0
 permutation_attempt <- 0
 failed_attempts <- 0
-batch_files <- character()  # para rastreo de archivos temporales
+batch_files <- character()  # track temporary batch files
 
 for (batch in 1:n_batches) {
   
-  # Verificación de objetivo alcanzado
+  # Check whether the target has been reached
   if (triplets_collected >= target_total_triplets) {
     message("\nObjetivo alcanzado")
     break
@@ -134,7 +134,7 @@ for (batch in 1:n_batches) {
   message(sprintf("\n=== Lote %d/%d | Permutaciones %d-%d ===", 
                   batch, n_batches, start_perm, end_perm))
   
-  # Procesamiento paralelo del lote
+  # Parallel processing of the current batch
   batch_results <- foreach(
     perm_id = batch_perms,
     .packages = c("data.table", "mgcv"),
@@ -145,7 +145,7 @@ for (batch in 1:n_batches) {
     set.seed(seed_base + perm_id)
     
     ###########
-    # Permutación del pool
+    # Pool permutation
     ###########
     
     permuted_pool <- tryCatch({
@@ -162,7 +162,7 @@ for (batch in 1:n_batches) {
     }
     
     ###########
-    # Construcción de tripletes
+    # Triplet construction
     ###########
     
     triplets_perm <- tryCatch({
@@ -186,7 +186,7 @@ for (batch in 1:n_batches) {
     }
     
     ###########
-    # Filtrado y selección de tripletes
+    # Triplet filtering and selection
     ###########
     
     trip_counts <- unique(triplets_perm[, .(drugA, drugB, meddra, safetyreportid)])[
@@ -202,7 +202,7 @@ for (batch in 1:n_batches) {
     selected_triplets <- candidate_triplets[sample(.N, n_to_sample)]
     
     ###########
-    # Reintroducción de reportes permutados
+    # Reintroduction of permuted reports into the main dataset
     ###########
     
     ade_modified <- tryCatch({
@@ -214,7 +214,7 @@ for (batch in 1:n_batches) {
     }
     
     ###########
-    # Validación de tripletes
+    # Triplet validation
     ###########
     
     reports_by_drug <- ade_modified[!is.na(atc_concept_id), 
@@ -251,7 +251,7 @@ for (batch in 1:n_batches) {
     }
     
     ###########
-    # Ajuste de modelos
+    # Model fitting
     ###########
     
     triplet_results <- list()
@@ -283,7 +283,7 @@ for (batch in 1:n_batches) {
         any(is.na(model_res$reri_lower90)) ||
         any(is.infinite(model_res$reri_lower90))) next
       
-      # guardado de resultados CON RERI
+      # Store results including RERI estimates
       result_dt <- data.table(
         drugA = rowt$drugA,
         drugB = rowt$drugB,
@@ -306,13 +306,13 @@ for (batch in 1:n_batches) {
       triplet_results[[length(triplet_results) + 1]] <- result_dt
     }
     
-    # Limpieza de memoria en worker
+    # Free memory on worker node before returning
     rm(permuted_pool, triplets_perm, trip_counts, candidate_triplets,
        selected_triplets, ade_modified, reports_by_drug, reports_by_event,
        validation_results, valid_triplets)
     gc(verbose = FALSE, full = TRUE)
     
-    # resultados del worker
+    # Return worker results
     if (length(triplet_results) > 0) {
       return(list(
         success = TRUE, 
@@ -325,30 +325,30 @@ for (batch in 1:n_batches) {
   }
   
   ###########
-  # Procesamiento de resultados del lote
+  # Batch result processing
   ###########
   
-  # filtrado de errores
+  # Filter out error objects from foreach output
   batch_results_clean <- Filter(function(x) !inherits(x, "error"), batch_results)
   
-  # conteo de éxitos y fallos
+  # Count successes and failures in this batch
   batch_successes <- sum(sapply(batch_results_clean, function(x) x$success))
   batch_failures <- length(batch_results_clean) - batch_successes
   
   permutation_attempt <- end_perm
   failed_attempts <- failed_attempts + batch_failures
   
-  # extraigo y guardo resultados exitosos
+  # Extract and persist successful results
   successful_results <- Filter(function(x) x$success, batch_results_clean)
   
   if (length(successful_results) > 0) {
     
     batch_triplets <- sum(sapply(successful_results, function(x) x$n_triplets))
     
-    # combino resultados del lote
+    # Combine results from all successful permutations in this batch
     batch_data <- rbindlist(lapply(successful_results, function(x) x$results), fill = TRUE)
     
-    # guardo archivo temporal de lote para no colapsar memoria
+    # Write to a temporary batch file to avoid memory overflow
     batch_file <- paste0(output_dir, "batch_", sprintf("%04d", batch), ".csv")
     fwrite(batch_data, batch_file)
     batch_files <- c(batch_files, batch_file)
@@ -365,20 +365,20 @@ for (batch in 1:n_batches) {
     message(sprintf("  Lote completado: 0/%d exitosos", length(batch_perms)))
   }
   
-  # Limpieza de memoria después de cada lote
+  # Free memory after each batch before starting the next
   rm(batch_results, batch_results_clean, successful_results)
   if (exists("batch_data")) rm(batch_data)
   gc(full = TRUE)
   
-  # pausa para estabilidad del sistema
+  # Brief pause for system stability
   Sys.sleep(2)
 }
 
-# Cerrar cluster
+# Shut down parallel cluster
 stopCluster(cl)
 
 ################################################################################
-# Resultados
+# Results summary
 ################################################################################
 
 
@@ -391,9 +391,8 @@ message(sprintf("Objetivo: %d (%.1f%% completado)",
                 target_total_triplets,
                 100 * triplets_collected / target_total_triplets))
 
-
-# Leer en chunks para evitar saturar memoria
-chunk_size <- 10  # Leer 10 archivos a la vez
+# Read batch files in chunks to avoid saturating memory
+chunk_size <- 10  # Read 10 files at a time
 n_chunks <- ceiling(length(batch_files) / chunk_size)
 
 null_all_chunks <- list()
@@ -411,35 +410,35 @@ for (chunk in 1:n_chunks) {
   gc()
 }
 
-# combino todos los chunks
+# Combine all chunks into a single table
 null_all <- rbindlist(null_all_chunks, fill = TRUE)
 rm(null_all_chunks)
 gc(full = TRUE)
 
 
 ################################################################################
-# Limpieza de outliers
+# Outlier removal
 ################################################################################
 
-# no se si hace falta esto, creo que es relevante solo en modelos con muchos parámetros que dan muchos valores inestables
-
+# Not clear whether this step is necessary. likely only relevant for models with many parameters that produce a high number of unstable estimates
+ 
 #null_all[, `:=`(
 #  q005 = quantile(log_lower90, 0.005, na.rm = TRUE),
 #  q995 = quantile(log_lower90, 0.995, na.rm = TRUE)
 #), by = stage]
-
+ 
 #null_cleaned <- null_all[
 #  log_lower90 >= q005 & log_lower90 <= q995
 #][, .(stage, log_lower90, log_ior, permutation)]
-
+ 
 #pct_removed <- 100 * (1 - nrow(null_cleaned) / nrow(null_all))
-#message(sprintf(" outliers removidos: %.1f%%", pct_removed))
+#message(sprintf(" Outliers removed: %.1f%%", pct_removed))
 
 ################################################################################
-# Calculo de umbrales
+# Threshold computation
 ################################################################################
 
-# usar null_cleaned o null_all
+# Use null_cleaned or null_all depending on whether outlier removal was applied
 null_thresholds <- null_all[, .(
   threshold_p90 = quantile(log_lower90, 0.90, na.rm = TRUE),
   threshold_p95 = quantile(log_lower90, 0.95, na.rm = TRUE),
@@ -473,7 +472,7 @@ cat("\nUmbrales RERI por etapa:\n")
 print(null_thresholds_reri[, .(stage, stage_name, threshold_p99, n_samples)])
 
 ################################################################################
-# Guardado de resultados 
+# Save results
 ################################################################################
 
 fwrite(null_all, paste0(output_dir, "null_distribution.csv"))
