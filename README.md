@@ -1,94 +1,94 @@
-# Modelado de la Dinámica Ontogénica de las Interacciones Farmacológicas en Pediatría
+# Modeling the Ontogenic Dynamics of Pharmacological Interactions in Pediatrics
 
 [![R](https://img.shields.io/badge/R-4.0%2B-blue.svg)](https://www.r-project.org/)
 
-## Descripción
+## Description
 
-Este repositorio implementa un flujo de validación metodológica para detectar señales de interacciones farmacológicas (drug-drug interactions, DDI) con dinámica ontogénica en población pediátrica usando modelos aditivos generalizados (GAM) sobre sistemas de reporte espontáneo.
+This repository implements a methodological validation workflow to detect drug-drug interaction (DDI) signals with ontogenic dynamics in pediatric populations using generalized additive models (GAMs) on spontaneous reporting systems.
 
-El pipeline reproduce la lógica del manuscrito adjunto:
+The pipeline follows the logic of the accompanying manuscript:
 
-- genera datasets semisintéticos a partir de FAERS pediátrico curado;
-- compara un enfoque GAM contra métodos estratificados clásicos basados en `IOR` y `RERI`;
-- construye una distribución nula empírica por permutación;
-- evalúa sensibilidad, especificidad, AUC, F1 y métricas relacionadas bajo escasez progresiva de datos;
-- analiza plausibilidad biológica mediante redes droga-gen;
-- compara señales detectadas contra `TWOSIDES`.
+- generates semi-synthetic datasets from curated pediatric FAERS data;
+- compares a GAM-based approach against classic stratified methods based on `IOR` and `RERI`;
+- builds an empirical null distribution through permutation;
+- evaluates sensitivity, specificity, AUC, F1, and related metrics under progressive data scarcity;
+- analyzes biological plausibility through drug-gene networks;
+- compares detected signals against `TWOSIDES`.
 
-La unidad de análisis es el **triplete** `drugA - drugB - event`, definido a partir de reportes con coadministración y un evento adverso reportado.
+The unit of analysis is the **triplet** `drugA - drugB - event`, defined from reports with coadministration and a reported adverse event.
 
-## Objetivo analítico
+## Analytical Objective
 
-El objetivo es evaluar si un GAM puede detectar mejor que los métodos estratificados patrones no lineales de desproporcionalidad a lo largo de las 7 etapas NICHD del desarrollo pediátrico.
+The goal is to evaluate whether a GAM can detect nonlinear disproportionality patterns across the 7 NICHD pediatric development stages better than stratified methods.
 
-En la implementación actual:
+In the current implementation:
 
-- los controles positivos se construyen por inyección semisintética de dinámicas ontogénicas;
-- los controles negativos se seleccionan a partir de combinaciones alternativas de los mismos fármacos y eventos;
-- la clasificación final del GAM usa un criterio doble: señal nominal positiva y superación de un umbral derivado de la distribución nula;
-- la comparación metodológica se realiza en escala multiplicativa (`log(IOR)`) y aditiva (`RERI`).
+- positive controls are constructed through semi-synthetic injection of ontogenic dynamics;
+- negative controls are selected from alternative combinations of the same drugs and events;
+- final GAM classification uses a double criterion: a positive nominal signal and exceeding a threshold derived from the null distribution;
+- methodological comparison is performed on both the multiplicative scale (`log(IOR)`) and the additive scale (`RERI`).
 
-## Conceptos clave
+## Key Concepts
 
-- **Triplete**: combinación `drugA`, `drugB`, `meddra`.
-- **Modulación ontogénica**: cambio del patrón de desproporcionalidad según etapa NICHD.
-- **Dinámica**: forma del patrón inyectado a través de las 7 etapas (`uniform`, `increase`, `decrease`, `plateau`, `inverse_plateau`).
-- **IOR**: medida de interacción en escala multiplicativa.
-- **RERI**: medida de interacción en escala aditiva.
-- **Distribución nula**: distribución empírica construida por permutación estratificada por etapa.
-- **Subset calibrado por poder**: subconjunto de tripletes retenidos para asegurar comparaciones más justas entre métodos.
+- **Triplet**: combination of `drugA`, `drugB`, and `meddra`.
+- **Ontogenic modulation**: change in the disproportionality pattern across NICHD stages.
+- **Dynamics**: shape of the injected pattern across the 7 stages (`uniform`, `increase`, `decrease`, `plateau`, `inverse_plateau`).
+- **IOR**: interaction measure on the multiplicative scale.
+- **RERI**: interaction measure on the additive scale.
+- **Null distribution**: empirical distribution built through stage-stratified permutation.
+- **Power-calibrated subset**: subset of triplets retained to ensure fairer comparisons across methods.
 
-## Estructura del repositorio
+## Repository Structure
 
 ```text
-00_functions.R               # Funciones base del pipeline, configuración global y utilidades
-01_theme.R                   # Tema gráfico común
-02_descriptive.R             # Análisis descriptivo exploratorio
-03_descriptive.R             # Variante/adaptación del análisis descriptivo
-10_augmentation.R            # Generación semisintética, positivos, negativos y sensibilidad
-20_null.R                    # Construcción de distribución nula empírica
-30_metrics.R                 # Cálculo de métricas, poder y comparaciones entre métodos
-40_network.R                 # Análisis de redes, soporte biológico y comparación con TWOSIDES
-41_graphs.R                  # Generación de figuras facetadas finales
-50_supuestos.R               # Análisis adicionales de supuestos/diagnóstico
-dataset_drugbank.R           # Preparación de insumos de DrugBank
-simulacion_inyeccion.R       # Simulación auxiliar para validar la estrategia de inyección
-drug.csv                     # Información de drogas
-drug_gene.csv                # Relaciones droga-gen/proteína
-ade_raw.csv                  # Base curada de reportes espontáneos
-twosides/                    # Datos de referencia para comparación externa
-vocabulary/                  # Vocabulario OMOP/MedDRA/ATC/RxNorm
-results/                     # Resultados generados por distintas configuraciones
+00_functions.R               # Core pipeline functions, global configuration, and utilities
+01_theme.R                   # Shared plotting theme
+02_descriptive.R             # Exploratory descriptive analysis
+03_descriptive.R             # Variant/adaptation of the descriptive analysis
+10_augmentation.R            # Semi-synthetic generation, positives, negatives, and sensitivity
+20_null.R                    # Empirical null distribution construction
+30_metrics.R                 # Metric calculation, power, and method comparisons
+40_network.R                 # Network analysis, biological support, and comparison with TWOSIDES
+41_graphs.R                  # Final faceted figure generation
+50_supuestos.R               # Additional assumption/diagnostic analyses
+dataset_drugbank.R           # DrugBank input preparation
+simulacion_inyeccion.R       # Auxiliary simulation to validate the injection strategy
+drug.csv                     # Drug information
+drug_gene.csv                # Drug-gene/protein relationships
+ade_raw.csv                  # Curated spontaneous reporting dataset
+twosides/                    # Reference data for external comparison
+vocabulary/                  # OMOP/MedDRA/ATC/RxNorm vocabulary
+results/                     # Results generated under different configurations
 ```
 
-## Datos de entrada
+## Input Data
 
-### Archivo principal
+### Main File
 
-`ade_raw.csv` debe contener, como mínimo:
+`ade_raw.csv` must contain, at a minimum:
 
-- `safetyreportid`: identificador único del reporte.
-- `atc_concept_id`: identificador ATC de la droga.
-- `meddra_concept_id`: identificador MedDRA del evento.
-- `nichd`: etapa del desarrollo pediátrico según NICHD.
+- `safetyreportid`: unique report identifier.
+- `atc_concept_id`: ATC drug identifier.
+- `meddra_concept_id`: MedDRA event identifier.
+- `nichd`: NICHD pediatric development stage.
 
-Si se habilita `include_sex`, además:
+If `include_sex` is enabled, it must also contain:
 
-- `sex`: sexo del paciente.
+- `sex`: patient sex.
 
-### Otros insumos requeridos
+### Other Required Inputs
 
-- `drug.csv`: nombres y metadatos de drogas.
-- `drug_gene.csv`: pares droga-gen/proteína para soporte biológico.
-- `vocabulary/concept.csv`: mapeos OMOP, MedDRA, ATC y RxNorm.
-- `vocabulary/concept_relationship.csv`: relaciones de vocabulario.
-- `twosides/TWOSIDES.csv.gz`: base de comparación externa.
+- `drug.csv`: drug names and metadata.
+- `drug_gene.csv`: drug-gene/protein pairs for biological support.
+- `vocabulary/concept.csv`: OMOP, MedDRA, ATC, and RxNorm mappings.
+- `vocabulary/concept_relationship.csv`: vocabulary relationships.
+- `twosides/TWOSIDES.csv.gz`: external comparison dataset.
 
-## Configuración global
+## Global Configuration
 
-La configuración central vive en `00_functions.R`.
+The central configuration lives in `00_functions.R`.
 
-Parámetros activos en la versión actual del pipeline:
+Active parameters in the current pipeline version:
 
 ```r
 spline_individuales <- TRUE
@@ -103,82 +103,82 @@ method <- "fREML"
 percentil <- "p95"
 ```
 
-Con esta combinación, el sufijo de resultados por defecto es:
+With this combination, the default results suffix is:
 
 ```r
 suffix <- "sics"
 ```
 
-Por lo tanto, los outputs de la configuración actual se escriben en `results/sics/`.
+Therefore, outputs from the current configuration are written to `results/sics/`.
 
-## Resumen metodológico
+## Methodological Summary
 
-### 1. Generación semisintética (`10_augmentation.R`)
+### 1. Semi-Synthetic Generation (`10_augmentation.R`)
 
-- unifica IDs de drogas con mismo compuesto activo;
-- construye tripletes candidatos desde reportes con al menos dos drogas y un evento;
-- filtra positivos con al menos `2` reportes y presencia en al menos `2` etapas;
-- selecciona `500` tripletes base positivos;
-- inyecta dinámicas ontogénicas usando cinco perfiles (`uniform` incluida como comparador);
-- asigna tamaños de efecto mediante una exponencial negativa (`lambda_fc = 0.75`);
-- ajusta el GAM y calcula `log(IOR)` y `RERI` para cada triplete;
-- genera un set negativo de hasta `10000` tripletes con fármacos y eventos del mismo universo;
-- ejecuta reducción iterativa del dataset (`10%` a `90%`) para el análisis de sensibilidad;
-- selecciona `100000` reportes para construir el pool usado por la distribución nula.
+- harmonizes drug IDs that correspond to the same active compound;
+- builds candidate triplets from reports with at least two drugs and one event;
+- filters positives with at least `2` reports and presence in at least `2` stages;
+- selects `500` base positive triplets;
+- injects ontogenic dynamics using five profiles (`uniform` included as comparator);
+- assigns effect sizes using a negative exponential distribution (`lambda_fc = 0.75`);
+- fits the GAM and computes `log(IOR)` and `RERI` for each triplet;
+- generates a negative set of up to `10000` triplets using drugs and events from the same universe;
+- performs iterative dataset reduction (`10%` to `90%`) for sensitivity analysis;
+- selects `100000` reports to build the pool used for the null distribution.
 
-### 2. Distribución nula (`20_null.R`)
+### 2. Null Distribution (`20_null.R`)
 
-- toma el pool guardado por `10_augmentation.R`;
-- permuta drogas y eventos dentro de cada etapa del desarrollo, preservando la estructura por etapa;
-- genera tripletes permutados y reintroduce esas permutaciones en el dataset original;
-- ajusta el GAM para los tripletes del universo nulo;
-- calcula, por etapa, percentiles empíricos (`p90`, `p95`, `p99`) del límite inferior del IC90 para `log(IOR)` y `RERI`.
+- takes the pool saved by `10_augmentation.R`;
+- permutes drugs and events within each developmental stage while preserving stage-specific structure;
+- generates permuted triplets and reinserts those permutations into the original dataset;
+- fits the GAM for triplets in the null universe;
+- computes, by stage, empirical percentiles (`p90`, `p95`, `p99`) of the lower bound of the 90% CI for `log(IOR)` and `RERI`.
 
-### 3. Métricas y calibración por poder (`30_metrics.R`)
+### 3. Metrics and Power Calibration (`30_metrics.R`)
 
-- expande los resultados positivos y negativos por etapa;
-- compara las distribuciones observadas frente a la distribución nula;
-- calcula sensibilidad, especificidad, `PPV`, `NPV`, `F1` y `AUC`;
-- estima intervalos por bootstrap no paramétrico (`n_boot = 2000`);
-- define subsets calibrados a un poder objetivo del `80%`;
-- evalúa resultados a nivel global, por dinámica y por etapa;
-- analiza tres escenarios: `original`, `filtered` e `intersection`.
+- expands positive and negative results by stage;
+- compares observed distributions against the null distribution;
+- calculates sensitivity, specificity, `PPV`, `NPV`, `F1`, and `AUC`;
+- estimates intervals through nonparametric bootstrap (`n_boot = 2000`);
+- defines subsets calibrated to a target power of `80%`;
+- evaluates results globally, by dynamics, and by stage;
+- analyzes three scenarios: `original`, `filtered`, and `intersection`.
 
-### 4. Redes y validación externa (`40_network.R`)
+### 4. Networks and External Validation (`40_network.R`)
 
-- ajusta candidatos del dataset original con al menos `5` reportes por triplete;
-- detecta señales positivas con criterio GAM-IOR y umbral nulo por etapa;
-- integra relaciones droga-gen/proteína derivadas de DrugBank;
-- evalúa soporte biológico mediante genes compartidos e índice de Jaccard;
-- contrasta la red observada frente a redes nulas generadas por rewiring;
-- compara pares y tripletes positivos contra `TWOSIDES`;
-- separa señales concordantes, novedosas y perdidas.
+- fits candidates from the original dataset with at least `5` reports per triplet;
+- detects positive signals using the GAM-IOR criterion and stage-specific null thresholds;
+- integrates drug-gene/protein relationships derived from DrugBank;
+- evaluates biological support through shared genes and the Jaccard index;
+- contrasts the observed network against null networks generated by rewiring;
+- compares positive pairs and triplets against `TWOSIDES`;
+- separates concordant, novel, and missed signals.
 
-### 5. Figuras finales (`41_graphs.R`)
+### 5. Final Figures (`41_graphs.R`)
 
-- genera figuras de dinámicas simuladas;
-- produce figuras facetadas por etapa, métrica y versión del dataset;
-- exporta gráficos en `png` y `svg` para resultados principales.
+- generates figures for simulated dynamics;
+- produces faceted figures by stage, metric, and dataset version;
+- exports main-result plots in `png` and `svg` format.
 
-## Criterios de detección
+## Detection Criteria
 
 ### GAM
 
-Un triplete se clasifica como positivo si existe al menos una etapa donde:
+A triplet is classified as positive if there is at least one stage where:
 
-- el límite inferior del IC90 de `log(IOR)` o `RERI` es mayor a `0`; y
-- además supera el umbral empírico de la distribución nula para esa etapa.
+- the lower bound of the 90% CI for `log(IOR)` or `RERI` is greater than `0`; and
+- it also exceeds the empirical threshold from the null distribution for that stage.
 
-Por defecto, el percentil usado es `p95`.
+By default, the percentile used is `p95`.
 
-### Métodos estratificados
+### Stratified Methods
 
-Los métodos clásicos usan criterio nominal por etapa:
+Classic methods use a nominal per-stage criterion:
 
 - `log(IOR)_lower90 > 0`
 - `RERI_lower90 > 0`
 
-## Orden recomendado de ejecución
+## Recommended Execution Order
 
 ```r
 source("00_functions.R", local = TRUE)
@@ -189,9 +189,9 @@ source("40_network.R", local = TRUE)
 source("41_graphs.R", local = TRUE)
 ```
 
-## Principales salidas
+## Main Outputs
 
-Bajo la configuración actual, los resultados se organizan en `results/sics/`:
+Under the current configuration, results are organized in `results/sics/`:
 
 ```text
 results/sics/
@@ -200,7 +200,7 @@ results/sics/
   metrics_results/
 ```
 
-Archivos relevantes generados por el pipeline:
+Relevant files generated by the pipeline:
 
 - `augmentation_results/positive_triplets_metadata.csv`
 - `augmentation_results/positive_triplets_results*.csv`
@@ -215,7 +215,7 @@ Archivos relevantes generados por el pipeline:
 - `metrics_results/fig_power_surface_ior_combined.png`
 - `metrics_results/fig_power_surface_reri_combined.png`
 
-En ejecuciones orientadas al manuscrito también aparecen resultados bajo `results/sics_manuscrito/`, incluyendo:
+In manuscript-oriented runs, additional results also appear under `results/sics_manuscrito/`, including:
 
 - `network/edge_metrics_interlayer.csv`
 - `network/concordant_pairs_full_summary.csv`
@@ -223,9 +223,9 @@ En ejecuciones orientadas al manuscrito también aparecen resultados bajo `resul
 - `network/metrics_versus_twosides.csv`
 - `network/twosides_comparison_triplets.csv`
 
-## Dependencias
+## Dependencies
 
-El pipeline carga librerías mediante `pacman::p_load()`. Entre las dependencias principales:
+The pipeline loads libraries through `pacman::p_load()`. Main dependencies include:
 
 - `data.table`
 - `tidyverse`
@@ -246,14 +246,14 @@ El pipeline carga librerías mediante `pacman::p_load()`. Entre las dependencias
 - `DHARMa`
 - `svglite`
 
-## Consideraciones prácticas
+## Practical Considerations
 
-- `ade_raw.csv` es grande, por lo que se recomienda trabajar con suficiente memoria RAM.
-- La paralelización usa por defecto el `75%` de los núcleos disponibles.
-- Los scripts están pensados para ejecutarse desde la raíz del proyecto.
-- `00_functions.R` fija el directorio de trabajo a `D:/Bioestadística/gam-farmacovigilancia`.
-- El pipeline guarda checkpoints intermedios para evitar perder progreso en corridas largas.
+- `ade_raw.csv` is large, so working with sufficient RAM is recommended.
+- Parallelization uses `75%` of available CPU cores by default.
+- The scripts are intended to be executed from the project root.
+- `00_functions.R` sets the working directory to `D:/Bioestadistica/gam-farmacovigilancia`.
+- The pipeline stores intermediate checkpoints to avoid losing progress in long runs.
 
-## Alcance del README
+## README Scope
 
-Este README prioriza describir la implementación real del repositorio actual. Cuando existen diferencias menores entre el borrador del manuscrito y los parámetros del código, se documenta el comportamiento observado en los scripts vigentes.
+This README prioritizes describing the actual implementation in the current repository. When minor differences exist between the manuscript draft and the code parameters, the behavior observed in the current scripts is documented.
