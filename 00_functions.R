@@ -1,33 +1,33 @@
 ################################################################################
-# Script de funciones
+# Functions script
 # Script: 00_functions.R
-# para usar, source("00_functions.R", local = TRUE)
+# To use: source("00_functions.R", local = TRUE)
 ################################################################################
 
 ################################################################################
-# Configuración general del pipeline
+# General pipeline configuration
 ################################################################################
 
-# proyecto
+# Project setup
 setwd("D:/Bioestadística/gam-farmacovigilancia")
 set.seed(7113)
 
-# cargado de librerias para todo el pipeline con pacman 
+# Load all pipeline libraries using pacman
 library(pacman)
 pacman::p_load(tidyverse, data.table, pbapply, parallel, doParallel, foreach,
   mgcv, MASS, akima, doRNG, pROC, svglte, DHARMa,
   igraph, ggraph, tidygraph, scales, RColorBrewer, patchwork, graphlayouts, ggrepel, networkD33, htmlwidgets, ggalluvial)
 
-# ordenado de niveles para el resto de los scripts
+# NICHD stage level ordering used throughout all scripts
 niveles_nichd <- c(
   "term_neonatal", "infancy", "toddler", "early_childhood",
   "middle_childhood", "early_adolescence", "late_adolescence"
 )
 
-# nucleos para paralelización 
+# Number of cores for parallelization (0.80 crashes with 16GB RAM)
 n_cores <- max(1, floor(detectCores() * 0.75)) 
 
-# rutas generales 
+# General file paths
 ruta_ade_raw <- "./ade_raw.csv"
 ruta_drug_gene <- "./drug_gene.csv"
 ruta_drug_info <- "./drug.csv" 
@@ -35,7 +35,7 @@ ruta_concept <- "./vocabulary/concept.csv"
 ruta_rel <- "./vocabulary/concept_relationship.csv"
 ruta_twosides <- "./twosides/TWOSIDES.csv.gz"
 
-# Parámetros de fórmula para GAM
+# GAM formula parameters
 spline_individuales <- TRUE 
 include_sex <- FALSE          
 include_stage_sex <- FALSE    
@@ -46,7 +46,7 @@ bs_type <- "cs"
 select <- FALSE
 method <- "fREML" 
 
-# codificación de formula para guardado 
+# Formula encoding string for output file naming
 suffix <- paste0(
   if (spline_individuales) "si" else "",
   if (include_sex) "s" else "",
@@ -56,34 +56,34 @@ suffix <- paste0(
   bs_type
 )
 
-Z90 <- qnorm(0.95)  # Cuantil 90% para intervalos de confianza
+Z90 <- qnorm(0.95)  # 90th percentile quantile for confidence intervals
 
-# percentilo elegido de distribución nula
+# Chosen percentile from the null distribution
 percentil <- "p95"
 
 source("01_theme.R", local = TRUE)
 theme_set(theme_base())               
 
 ################################################################################
-# Función para construir tripletes
+# Function to build triplets
 ################################################################################
 
-# Genera tripletes (drugA, drugB, event) para un reporte individual
+# Generates triplets (drugA, drugB, event) for a single report
 #
-# Parámetros:
-# drug: ids de drogas en el reporte (atc_concept_id)
-# event: ids de eventos en el reporte (meddra_concept_id)
-# report_id: id del reporte (safetyreportid)
-# nichd_stage: etapa NICHD numérica del reporte
+# Parameters:
+# drug: drug IDs in the report (atc_concept_id)
+# event: event IDs in the report (meddra_concept_id)
+# report_id: report ID (safetyreportid)
+# nichd_stage: numeric NICHD stage of the report
 # 
 # Return:
-# data.table con columnas: safetyreportid, drugA, drugB, meddra, nichd_num
+# data.table with columns: safetyreportid, drugA, drugB, meddra, nichd_num
 # 
-# Implementación:
-# Genera todas las combinaciones de pares de drogas (si >= 2 drogas)
-# Cruza cada par con cada evento del reporte
-# Aplica orden: drugA <= drugB (para evitar duplicados por orden inverso)
-# Devuelve NULL si el reporte NO tiene >= 2 drogas o eventos
+# Implementation:
+# Generates all drug pair combinations (if >= 2 drugs)
+# Crosses each pair with every event in the report
+# Enforces ordering: drugA <= drugB (to avoid duplicates from reversed order)
+# Returns NULL if the report does NOT have >= 2 drugs or at least 1 event
 
 make_triplets <- function(drug, event, report_id, nichd_stage) {
   
@@ -92,12 +92,12 @@ make_triplets <- function(drug, event, report_id, nichd_stage) {
   drug <- unique(drug)
   event <- unique(event)
   
-  # combinaciones de pares de drogas
+  # All drug pair combinations
   if (length(drug) == 2) {
     combination <- matrix(c(min(drug), max(drug)), nrow = 1)
   } else {
     combination <- t(combn(drug, 2))
-    # Orden: min primero
+    # Ordering: min first
     combination <- t(apply(combination, 1, function(x) c(min(x), max(x))))
   }
   
@@ -114,51 +114,51 @@ make_triplets <- function(drug, event, report_id, nichd_stage) {
 }
 
 ################################################################################
-# Función de tamaño de efecto (fold-change)
+# Effect size function (fold-change)
 ################################################################################
 
-# Muestrea fold-changes siguiendo distribución exponencial negativa
+# Samples fold-changes from a negative exponential distribution
 #
-# parámetros:
-# n: Número de fold-changes a generar
-# lambda: parámetro de tasa para distribución exponencial (0.75)
+# Parameters:
+# n: Number of fold-changes to generate
+# lambda: Rate parameter for the exponential distribution (0.75)
 # 
-# return: vector numérico con fold-changes >= 1
+# Return: numeric vector of fold-changes >= 1
 # 
-# Implementación:
+# Implementation:
 # - FC ~ 1 + exp(λ = 0.75)
-# - rango típico: [1, 10] con sesgo a la derecha
+# - Typical range: [1, 10] with right skew
 
 fold_change <- function(n, lambda = 0.75) {
   1 + rexp(n, rate = lambda)
 }
 
 ################################################################################
-# Función auxiliar: calcular coadministración por etapa para un triplete
+# Helper function: compute co-administration counts by stage for a triplet
 ################################################################################
 
-# Calcula la cantidad de reportes A+B por etapa para cada triplete
-# Permite calcular superset para método clásico
+# Computes the number of A+B co-administration reports per stage for each triplet
+# Used to compute the superset for the classical method
 # 
-# return:
-# n_coadmin_stage: número de reportes A+B para evento en etapa
+# Return:
+# n_coadmin_stage: number of A+B reports for the event in each stage
 #
-# Implementación:
-# Identifica reportes A+B
-# Realiza conteo de reportes por etapa
-# Completa etapas sin reportes con 0
+# Implementation:
+# Identifies A+B reports
+# Counts reports per stage
+# Fills stages with no reports with 0
 
 coadmin_by_stage <- function(drugA, drugB, meddra, ade_data) {
   
-  # reportes con cada droga
+  # Reports containing each drug
   reports_A <- unique(ade_data[atc_concept_id == drugA, safetyreportid])
   reports_B <- unique(ade_data[atc_concept_id == drugB, safetyreportid])
   
-  # Reportes con ambas drogas (coadministración)
+  # Reports with both drugs (co-administration)
   reports_AB <- intersect(reports_A, reports_B)
   
   if (length(reports_AB) == 0) {
-    # Si no hay coadministración, retornar estructura vacía
+    # If no co-administration exists, return empty structure
     return(data.table(
       nichd_num = 1:7,
       nichd = niveles_nichd,
@@ -166,13 +166,13 @@ coadmin_by_stage <- function(drugA, drugB, meddra, ade_data) {
     ))
   }
   
-  # etapa NICHD de cada reporte con coadministración
+  # NICHD stage of each co-administered report
   stage_counts <- unique(ade_data[
     safetyreportid %in% reports_AB,
     .(safetyreportid, nichd, nichd_num)
   ])[, .N, by = .(nichd, nichd_num)]
   
-  # ceros para etapas sin reportes
+  # Fill stages with no reports with zeros
   full_stages <- data.table(
     nichd_num = 1:7,
     nichd = niveles_nichd
@@ -192,23 +192,23 @@ coadmin_by_stage <- function(drugA, drugB, meddra, ade_data) {
 }
 
 ################################################################################
-# Función de generación de dinámicas
+# Dynamic pattern generation function
 ################################################################################
 
-# Genera patrones dinámicos normalizados para inyección de señales
+# Generates normalized dynamic patterns for signal injection
 #
-# parámetros:
-# type: Tipo de dinámica: "uniform", "increase", "decrease", "plateau", "inverse_plateau"
-# N: Número de etapas (7 para NICHD)
+# Parameters:
+# type: Dynamic type: "uniform", "increase", "decrease", "plateau", "inverse_plateau"
+# N: Number of stages (7 for NICHD)
 # 
-# return: vector numérico normalizado en [-1, 1] con el patrón temporal
+# Return: numeric vector normalized to [-1, 1] representing the temporal pattern
 # 
-# formas de dinámicas
-# uniform: señal constante (0 en todas las etapas)
-# increase: crecimiento monotónico de -1 a +1
-# decrease: decrecimiento monotónico de +1 a -1
-# plateau: pico en etapas centrales (forma de campana)
-# inverse_plateau: valle en etapas centrales (forma de U invertida)
+# Dynamic shapes:
+# uniform: constant signal (0 across all stages)
+# increase: monotonic increase from -1 to +1
+# decrease: monotonic decrease from +1 to -1
+# plateau: peak at central stages (bell shape)
+# inverse_plateau: trough at central stages (U shape)
 
 generate_dynamic <- function(type, N = 7) {
   type <- as.character(type)
@@ -236,61 +236,62 @@ generate_dynamic <- function(type, N = 7) {
 }
 
 ################################################################################
-# Función de inyección de señales
+# Signal injection function
 ################################################################################
 
-# Inyecta señal de interacción droga-droga
+# Injects a drug-drug interaction signal
 #
-# parámetros:
-# drugA_id: id droga A (ATC concept_id)
-# drugB_id: id droga B (ATC concept_id)
-# event_id: id del evento adverso (MedDRA concept_id)
-# dynamic_type: tipo de dinámica (llama generate_dynamic)
-# fold_change: magnitud del efecto (llama fold_change)
-# ade_raw_dt: data.table de dataset original
+# Parameters:
+# drugA_id: Drug A ID (ATC concept_id)
+# drugB_id: Drug B ID (ATC concept_id)
+# event_id: Adverse event ID (MedDRA concept_id)
+# dynamic_type: Dynamic type (calls generate_dynamic)
+# fold_change: Effect magnitude (calls fold_change)
+# ade_raw_dt: data.table with the original dataset
 # 
-# return Lista con: success, n_injected, n_coadmin, ade_aug, diagnostics
+# Return: List with: success, n_injected, n_coadmin, ade_aug, diagnostics
 # 
-# Implementación:
+# Implementation:
 # 
-# 1 Tasa base(e_j):
-# Valor base para aplicar fold-change
-# El valor base debe ser calculado teniendo en cuenta componentes individuales 
-# El valor base altera la consistencia de la inyección en distintos escenarios
-# Script "simulacion_inyeccion" muestra consistencia en distintos escenarios
-# Los métodos que asumen "independencia" de los eventos solo se usan como proxy
-# no suponen independencia real 
+# 1 Base rate (e_j):
+# Baseline value to which the fold-change is applied
+# Must be calculated accounting for individual drug components
+# The baseline choice affects injection consistency across scenarios
+# Script "simulacion_inyeccion" illustrates consistency under different scenarios
+# Methods assuming event "independence" are used only as a proxy;
+# they do not assume true independence
 #
 # 2 Fold_change (FC):
-# Factor multiplicativo del efecto
+# Multiplicative effect size factor
 # 
-# 3 Dinámica f(j):
-# Función normalizada en [0, 1] por etapa
-# f(j) = llama a generate_dynamic(type, N=7)  <--- N siempre 7 por etapas nichd 
+# 3 Dynamic f(j):
+# Stage-normalized function in [0, 1]
+# f(j) = calls generate_dynamic(type, N=7)  <--- N always 7 for NICHD stages
 # 
-# 4 Probabilidad dinámica: (formula final de probabilidad de reporte)
+# 4 Dynamic probability: (final reporting probability formula)
 # p_dynamic(j) = e_j × FC + f(j)
 # 
-# 5 Simulación:
-# Para cada reporte con drugA + drugB
+# 5 Simulation:
+# For each report containing drugA + drugB
 # Y_new ~ Bernoulli(p_dynamic(stage_j))
-# Inyecta SOLO en eventos que no existen (si ya hay evento, se deja, trata de modelar dinámica sobre existentes)
+# Injects ONLY into events that do not already exist (if the event is present, it is kept;
+# this attempts to model the dynamic on top of pre-existing events)
 
 inject_signal <- function(drugA_id, drugB_id, event_id, 
                           dynamic_type, fold_change, 
                           ade_raw_dt) {
   
-  if (drugA_id > drugB_id) {   # agrego ordenamiento (ya se hace en otras funciones pero por las dudas)
+  if (drugA_id > drugB_id) {   # enforce ordering (already done in other functions, but added as a safety measure)
     temp <- drugA_id
     drugA_id <- drugB_id
     drugB_id <- temp
   }
   
-  # copia independiente (para que datos inyectados no vayan corrompiendo el dataset original)
+  # Independent copy (so injected data does not corrupt the original dataset)
   ade_aug <- copy(ade_raw_dt)
   ade_aug[, simulated_event := FALSE]
   
-  # 1- reportes con ambas drogas (coadministración)
+  # 1- Reports containing both drugs (co-administration)
   reports_A <- unique(ade_aug[atc_concept_id == drugA_id, safetyreportid])
   reports_B <- unique(ade_aug[atc_concept_id == drugB_id, safetyreportid])
   reports_AB <- intersect(reports_A, reports_B)
@@ -316,13 +317,13 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     ))
   }
   
-  # 2- reportes objetivo (solo coadministración)
+  # 2- Target reports (co-administration reports only)
   target_reports <- unique(ade_raw_dt[
     safetyreportid %in% reports_AB, 
     .(safetyreportid, nichd, nichd_num)
   ])
   
-  # Identifica si el evento YA existe en cada reporte
+  # Identifies whether the event ALREADY exists in each report
   event_in_report <- unique(ade_raw_dt[
     meddra_concept_id == event_id, 
     safetyreportid
@@ -330,40 +331,40 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   
   target_reports[, e_old := as.integer(safetyreportid %in% event_in_report)]
   
-  # 3- Calculo tasa base (e_j)
+  # 3- Compute base rate (e_j)
 
-  # Calculo tasas base individuales
+  # Compute individual base rates
   reports_A_clean <- setdiff(reports_A, reports_AB)
   reports_B_clean <- setdiff(reports_B, reports_AB)
   p_baseA <- mean(reports_A_clean %in% event_in_report)
   p_baseB <- mean(reports_B_clean %in% event_in_report)
   p_base0 <- length(event_in_report) / length(unique(ade_raw_dt$safetyreportid))
 
-  # tener en cuenta que no son probabilidades, son odds, pero la extrapolación es válida si p <0.1  
-
-  # Existen diversos métodos para considerar tasa de base
-  # Todos se comportan distinto según el escenario
-
-  # - Método aditivo:
-  # consistente, genera IOR altos cuando riesgos individuales bajos + riesgo basal alto
-  # e_j = P(evento | A ∪ B) asumiendo independencia
-  # fórmula: P(A ∪ B) = P(A) + P(B) - P(A) × P(B)
+  # Note: these are not probabilities but odds; the extrapolation is valid when p < 0.1
+ 
+  # Several methods exist to compute the base rate;
+  # each behaves differently depending on the scenario
+ 
+  # - Additive method:
+  # Consistent; produces high IOR when individual risks are low and baseline risk is high
+  # e_j = P(event | A ∪ B) assuming independence
+  # Formula: P(A ∪ B) = P(A) + P(B) - P(A) × P(B)
   # p_baseA + p_baseB - (p_baseA * p_baseB)
-
-  # - Método multiplicativo
-  # consistente, solo genera IOR altos cuando riesgo basal bajo + riesgos individuales altos
-  # tiene en cuenta todos los componentes (riesgos individuales y global)
-  # e_j = (p_A × p_B) / p_0 
-  # fórmula: P(A) × P(B) / P(0)
+ 
+  # - Multiplicative method:
+  # Consistent; produces high IOR only when baseline risk is low and individual risks are high
+  # Accounts for all components (individual and global risks)
+  # e_j = (p_A × p_B) / p_0
+  # Formula: P(A) × P(B) / P(0)
   # (p_baseA * p_baseB) / p_base0
   e_j <- p_baseA + p_baseB - (p_baseA * p_baseB)
 
-  # t_ij = fold_change * e_j (tamaño de efecto)
+  # t_ij = fold_change * e_j (effect size)
   t_ij <- fold_change * e_j
 
-  # 4- Probabilidades por etapa 
+  # 4- Stage-specific probabilities
   # bprobs = rep(tij, N)
-  # dy = tanh(...) * tij  (la dinámica se escala por tij)
+  # dy = tanh(...) * tij  (the dynamic is scaled by tij)
   # rprobs = bprobs + dy
   
   N <- 7
@@ -389,10 +390,10 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   
   rprobs <- bprobs + dy
 
-  # clippeo de probabilidades
+  # Clip probabilities to valid range
   rprobs <- pmax(pmin(rprobs, 0.999), 0.001)
 
-  # 5- tabla de probabilidades por etapa
+  # 5- Stage probability table
   stage_probs <- data.table(
     nichd_num = 1:N,
     bprobs = bprobs,
@@ -400,7 +401,7 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     p_dynamic = rprobs
   )
   
-  # 6- Merge y generación de eventos nuevos
+  # 6- Merge and generate new events
   target_reports <- merge(
     target_reports, 
     stage_probs[, .(nichd_num, p_dynamic)], 
@@ -408,17 +409,17 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     all.x = TRUE
   )
   
-  # Simulación Bernoulli por reporte
+  # Bernoulli simulation per report
   target_reports[, e_new := rbinom(.N, 1, p_dynamic)]
   
-  # Combino con eventos existentes
+  # Combine with pre-existing events
   target_reports[, e_final := pmax(e_old, e_new)]
   
-  # 7- marco reportes a inyectar
-  # Identifico reportes que DEBERÍAN tener el evento (simulado)
+  # 7- Flag reports to inject
+  # Identify reports that SHOULD have the event (simulated)
   reports_to_mark <- target_reports[e_old == 0 & e_final == 1, safetyreportid]
   
-  # validación de al menos 1 evento inyectado
+  # Validation: at least 1 event must have been injected
   if (length(reports_to_mark) == 0) {
     return(list(
       success = FALSE,
@@ -448,7 +449,7 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     ))
   }
   
-  # 8- marco reportes que ahora tienen el evento simulado (inyectados)
+  # 8- Flag reports that now carry the simulated event (injected)
   ade_aug[
     safetyreportid %in% reports_to_mark,
     `:=`(
@@ -461,7 +462,7 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
 
   injection_rate <- length(reports_to_mark) / nrow(target_reports[e_old == 0])
   
-  # 9- Diagnósticos
+  # 9- Diagnostics
   diagnostics <- list(
     e_j = e_j,
     t_ij = t_ij,
@@ -500,19 +501,19 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
 }
 
 ################################################################################
-# Función auxiliar: calcular conteos básicos
+# Helper function: compute basic counts
 ################################################################################
 
-# Calcula conteos básicos (eventos, coadministraciones) para un par droga-evento
+# Computes basic counts (events, co-administrations) for a drug-event pair
 #
-# Parámetros:
-#   ade_data: data.table aumentado con reportes (columnas atc_concept_id, meddra_concept_id, safetyreportid).
-#   drugA: id de droga A (atc_concept_id).
-#   drugB: id de droga B (atc_concept_id).
-#   meddra: id del evento (meddra_concept_id).
+# Parameters:
+#   ade_data: augmented data.table with reports (columns: atc_concept_id, meddra_concept_id, safetyreportid).
+#   drugA: Drug A ID (atc_concept_id).
+#   drugB: Drug B ID (atc_concept_id).
+#   meddra: Event ID (meddra_concept_id).
 #
 # Return:
-#   lista con: n_events, n_events_coadmin y n_coadmin
+#   List with: n_events, n_events_coadmin, and n_coadmin
 
 calc_basic_counts <- function(ade_data, drugA, drugB, meddra) {
   r_a <- unique(ade_data[atc_concept_id == drugA, safetyreportid])
@@ -531,32 +532,32 @@ calc_basic_counts <- function(ade_data, drugA, drugB, meddra) {
 }
 
 ################################################################################
-# Función para ajuste de GAM 
+# GAM fitting function
 ################################################################################
 
-# Ajusta modelo GAM para interacción droga-droga 
+# Fits a GAM model for drug-drug interaction
 #
-# parametrizado para ir corriendo pruebas 
+# Parameterized to facilitate iterative testing
 #
-# parámetros:
-# drugA_id: id Droga A
-# drugB_id: id Droga B
-# event_id: id del evento adverso
-# ade_data: data.table con dataset original
+# Parameters:
+# drugA_id: Drug A ID
+# drugB_id: Drug B ID
+# event_id: Adverse event ID
+# ade_data: data.table with the original dataset
 # 
-# include_nichd: Si TRUE, agrega efecto base de stage como covariable
-# nichd_spline: Si TRUE, usa spline para efecto base de stage.
-#               Si FALSE, usa coeficiente lineal (default: TRUE)
-# spline_individuales: Si TRUE, usa splines para efectos individuales (suaviza riesgos basales drogaA y B por separado)
-# bs_type: elección de tipo de spline: "cs", "tp", "cr"
-# select: Si TRUE, permite penalización hasta cero (Para ver si algún coeficiente no aporta)
-# include_sex: Si TRUE, incluye sexo como covariable
-# include_stage_sex: Si TRUE, incluye interacción stage-sex
-# k_spline: número de knots para splines (debería ser siempre 7 por nichd)
-# method; método de ajuste GAM (dejar "fREML")
+# include_nichd: If TRUE, adds the NICHD stage as a baseline covariate
+# nichd_spline: If TRUE, fits the NICHD effect as a spline.
+#               If FALSE, uses a linear coefficient (default: TRUE)
+# spline_individuales: If TRUE, uses splines for individual drug effects (smooths baseline risks for drugA and drugB separately)
+# bs_type: Spline basis type: "cs", "tp", or "cr"
+# select: If TRUE, allows shrinkage to zero (useful for assessing whether a term contributes)
+# include_sex: If TRUE, includes sex as a covariate
+# include_stage_sex: If TRUE, includes a stage-by-sex interaction
+# k_spline: Number of knots for splines (should always be 7 for NICHD stages)
+# method: GAM fitting method (keep as "fREML")
 # 
-# Return: 
-# Lista con: success, n_events, n_coadmin, log_ior, reri, etc.
+# Return:
+# List with: success, n_events, n_coadmin, log_ior, reri, etc.
 
 fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
                                  nichd_spline = TRUE,
@@ -569,7 +570,7 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
                                  k_spline = 7,
                                  method = "fREML") {
   ###########
-  # 1- identifico reportes 
+  # 1- Identify reports
   ###########
   
   reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
@@ -577,7 +578,7 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
   reportes_ea_real <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
   reportes_coadmin <- intersect(reportes_droga_a, reportes_droga_b)
   
-  # agrego reportes simulados "flaggeados" en función de inyección
+  # Include simulated reports flagged during injection
   reportes_ea_sim <- if("simulated_event" %in% names(ade_data)) {
     unique(ade_data[
       simulated_event == TRUE & simulated_meddra == event_id,
@@ -586,58 +587,58 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
   } else {
     integer(0)
   }
-  # Eventos previos 
+  # Pre-existing real events
   reportes_ea_real <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
 
-  # Combinar reales + simulados
+  # Combine real + simulated events
   reportes_ea <- union(reportes_ea_real, reportes_ea_sim)
   
-  n_events_total <- length(reportes_ea)  # total eventos (con o sin fármaco)
-  n_coadmin <- length(reportes_coadmin)  # total reportes A+B (con o sin evento)
-  n_events_coadmin <- length(intersect(reportes_coadmin, reportes_ea))  # eventos A+B
+  n_events_total <- length(reportes_ea)   # total events (with or without drug)
+  n_coadmin <- length(reportes_coadmin)   # total A+B reports (with or without event)
+  n_events_coadmin <- length(intersect(reportes_coadmin, reportes_ea))  # events in A+B reports
 
   ###########
-  # 2- Construcción de dataset para ajustar
+  # 2- Build the modeling dataset
   ###########
   
-  # Columnas base necesarias
+  # Required base columns
   cols_necesarias <- c("safetyreportid", "nichd", "nichd_num")
   
-  # sex
+  # Sex covariate
   if (include_sex) {
     cols_necesarias <- c(cols_necesarias, "sex")
   }
   
   datos_modelo <- unique(ade_data[, ..cols_necesarias])
   
-  # variables de exposición
+  # Exposure variables
   datos_modelo[, ea_ocurrio := as.integer(safetyreportid %in% reportes_ea)]
   datos_modelo[, droga_a := as.integer(safetyreportid %in% reportes_droga_a)]
   datos_modelo[, droga_b := as.integer(safetyreportid %in% reportes_droga_b)]
   datos_modelo[, droga_ab := as.integer(droga_a == 1 & droga_b == 1)]
   
-  # si sex está presente
+  # If sex is included
   if (include_sex) {
-    # estandarizo valores
+    # Standardize sex values
     datos_modelo[, sex := toupper(trimws(sex))]
     datos_modelo[sex == "M", sex := "MALE"]
     datos_modelo[sex == "F", sex := "FEMALE"]
-    # convierto a factor con niveles estándar
+    # Convert to factor with standard levels
     datos_modelo[, sex := factor(sex, levels = c("MALE", "FEMALE"))]
   }
   
   ###########
-  # 4- Construcción de fórmula con parámetros
+  # 4- Build formula from parameters
   ###########
   
-  # respuesta
+  # Response variable
   formula_parts <- "ea_ocurrio ~ "
   
-  # opción A: efectos individuales lineales
+  # Option A: linear individual drug effects
   if (!spline_individuales) {
     formula_parts <- paste0(formula_parts, "droga_a + droga_b + ")
   } else {
-    # opción B: efectos individuales con splines
+    # Option B: individual drug effects with splines
     formula_parts <- paste0(
       formula_parts,
       sprintf("s(nichd_num, k = %d, bs = '%s', by = droga_a) + ", 
@@ -647,46 +648,46 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
     )
   }
 
-  # Efecto de nichd - spline o lineal (si include_nichd = TRUE)
+  # NICHD effect - spline or linear (if include_nichd = TRUE)
   if (include_nichd) {
     if (nichd_spline) {
-    # spline de base
+    # Spline basis for NICHD effect
       formula_parts <- paste0(
         formula_parts,
         sprintf("s(nichd_num, k = %d, bs = '%s') + ", k_spline, bs_type)
       )
     } else {
-    # efecto lineal de nichd
+    # Linear NICHD effect
       formula_parts <- paste0(formula_parts, "nichd_num + ")
     }
   }
 
-  # spline de interacción (este no modificar)
+  # Interaction spline (do not modify this term)
   formula_parts <- paste0(
     formula_parts,
     sprintf("s(nichd_num, k = %d, bs = '%s', by = droga_ab)", k_spline, bs_type)
   )
   
-  # si sexo TRUE
+  # If sex is included
   if (include_sex) {
     if (include_stage_sex) {
-      # Si sexo con spline por nichd
+      # Sex-by-stage spline interaction
       formula_parts <- paste0(
         formula_parts,
         sprintf(" + s(nichd_num, k = %d, bs = '%s', by = sex)", 
                 k_spline, bs_type)
       )
     } else {
-      # Si solo sex lineal
+      # Linear sex effect only
       formula_parts <- paste0(formula_parts, " + sex")
     }
   }
   
-  # Formula final
+  # Final model formula
   formula_final <- as.formula(formula_parts)
   
   ###########
-  # 5- Ajuste de modelo
+  # 5- Model fitting
   ###########
   
   tryCatch({
@@ -698,14 +699,14 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
       method = method,
       select = select,    
       discrete = TRUE,
-      nthreads = 1      # si no pongo esto, me da problemas en 10_augmentation con el uso de paralelización
+      nthreads = 1  # Setting nthreads = 1 prevents conflicts with external parallelization in 10_augmentation
     )
     
     ###########
-    # 6- Calculo de log-IOR por nichd
+    # 6- Compute log-IOR per NICHD stage
     ###########
     
-    # Grid de predicción (todas las combinaciones)
+    # Prediction grid (all exposure combinations)
     grid_dif <- CJ(
       nichd_num = 1:7, 
       droga_a = c(0, 1), 
@@ -713,30 +714,30 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
     )
     grid_dif[, droga_ab := as.integer(droga_a == 1 & droga_b == 1)]
     
-    # si sex en la formula, elegir nivel de referencia
+    # If sex is in the formula, set reference level
     if (include_sex) {
-      # MALE de referencia
+      # Male as reference level
       grid_dif[, sex := factor("MALE", levels = c("MALE", "FEMALE"))]
     }
     
-    # predicciones
+    # Predictions on the link scale
     pred_dif <- predict(modelo, newdata = grid_dif, type = "link", se.fit = TRUE)
     grid_dif[, `:=`(lp = pred_dif$fit, se = pred_dif$se.fit)]
     
-    # Pivoteo para contraste
+    # Pivot for contrast computation
     w_lp <- dcast(grid_dif, nichd_num ~ droga_a + droga_b, 
                   value.var = c("lp", "se"))
     
-    # Calculo final:  log(IOR) = log(OR₁₁) - log(OR₁₀) - log(OR₀₁) + log(OR₀₀)
-    # Esto es lo mismo que hacer log( OR₁₁ / OR₁₀ . OR₀₁)
+    # Final computation: log(IOR) = log(OR₁₁) - log(OR₁₀) - log(OR₀₁) + log(OR₀₀)
+    # This is equivalent to log( OR₁₁ / (OR₁₀ · OR₀₁) )
     log_ior <- w_lp$lp_1_1 - w_lp$lp_1_0 - w_lp$lp_0_1 + w_lp$lp_0_0
     
     ###########
-    # 7- Calculo de standard error de log-IOR con matriz de CoVAR 
+    # 7- Compute log-IOR standard error using the covariance matrix
     ###########
     
     Xp <- predict(modelo, newdata = grid_dif, type = "lpmatrix")
-    Vb <- vcov(modelo, unconditional = TRUE)  # unconditional = TRUE aplica corrección para incluir incertidumbre del suavizado
+    Vb <- vcov(modelo, unconditional = TRUE) # unconditional = TRUE applies correction to include smoothing uncertainty
     cov_link <- Xp %*% Vb %*% t(Xp)
     
     log_ior_se <- numeric(7)
@@ -750,7 +751,7 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
       idx_11 <- which(grid_dif$nichd_num == stage & 
                         grid_dif$droga_a == 1 & grid_dif$droga_b == 1)
       
-      # vector de contraste
+      # Contrast vector
       cvec <- rep(0, nrow(grid_dif))
       cvec[c(idx_11, idx_10, idx_01, idx_00)] <- c(1, -1, -1, 1)
       
@@ -762,10 +763,10 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
     }
     
     ###########
-    # 8- Calculo de IC y métricas
+    # 8- Compute confidence intervals and metrics
     ###########
     
-    # z90 para IC
+    # z90 for confidence intervals
     if (!exists("Z90")) {
       Z90 <- qnorm(0.95)
     }
@@ -779,13 +780,13 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
     mean_ior <- mean(ior_values)
 
     ###########
-    # 9- Cálculo de RERI por etapa (riesgo absoluto) con IC90
+    # 9- Compute RERI per stage (relative risk scale) with 90% CI
     ###########
     
-    # etapas
+    # Stages
     stages <- sort(unique(datos_modelo$nichd_num))
     
-    # newdata con las 4 combinaciones A/B por etapa
+    # Prediction data with the 4 exposure combinations per stage
     nd_reri <- rbindlist(lapply(stages, function(s) {
       data.table(
         nichd_num = s,
@@ -795,52 +796,51 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
       )
     }), use.names = TRUE)
     
-    # Covariables adicionales (si existen)
+    # Additional covariates (if present)
     if (include_sex) {
       nd_reri[, sex := factor(levels(datos_modelo$sex)[1], 
                              levels = levels(datos_modelo$sex))]
     }
-    
     if (include_nichd && !nichd_spline) {
       nd_reri[, nichd := factor(niveles_nichd[nichd_num],
                                 levels = niveles_nichd,
                                 ordered = TRUE)]
     }
     
-    # Predicción en escala de riesgo
+    # Prediction on the risk scale
     pred_reri <- predict(modelo, newdata = nd_reri, type = "link", se.fit = TRUE)
     nd_reri[, `:=`(
       eta = pred_reri$fit,
       se  = pred_reri$se.fit
     )]
     
-    # Bootstrap paramétrico --> a diferencia del método delta, permite capturar no linealidad del método
-    # matriz de diseño y coeficientes
+    # Parametric bootstrap --> unlike the delta method, this captures non-linearity
+    # Design matrix and coefficients
     X_reri <- predict(modelo, newdata = nd_reri, type = "lpmatrix")
     beta_hat <- coef(modelo)
     V_beta <- vcov(modelo, unconditional = TRUE)
     
-    # n simulaciones
+    # Number of bootstrap simulations
     B <- 2000
     
-    # simulación de coeficientes desde su distribución conjunta
+    # Simulate coefficients from their joint distribution
     # beta_sim ~ MVN(beta_hat, V_beta)
     beta_sims <- mvrnorm(n = B, mu = beta_hat, Sigma = V_beta)
     
-    # calculo predicciones para cada set de los coeficientes simulados
+    # Compute predictions for each set of simulated coefficients
     p_sims <- matrix(NA, nrow = nrow(nd_reri), ncol = B)
 
     p_sims <- plogis(X_reri %*% t(beta_sims))
 
-    # helper para RERI
+    # Helper function for RERI calculation
     calc_reri <- function(p) {
-      # p es un vector de 4 probabilidades por etapa: [p00, p10, p01, p11]
+      # p is a vector of 4 probabilities per stage: [p00, p10, p01, p11]
       p11 <- p[4]; p10 <- p[2]; p01 <- p[3]; p00 <- p[1]
-      if (p00 <= 0) return(NA_real_)          # guarda contra división por cero
+      if (p00 <= 0) return(NA_real_)       # against division by zero
       p11/p00 - p10/p00 - p01/p00 + 1
     }
     
-    # Cálculo por etapa
+    # Per-stage computation
     reri_dt <- nd_reri[, {
       idx <- .I
       p_mat <- p_sims[idx, , drop = FALSE]
@@ -853,13 +853,13 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
       )
     }, by = nichd_num]
     
-    # vectores de retorno
+    # Return vectors
     reri_values <- reri_dt$RERI
     reri_lower90 <- reri_dt$RERI_lower90
     reri_upper90 <- reri_dt$RERI_upper90
     
     ###########
-    # 10- Resultados
+    # 10- Results
     ###########
 
     return(list(
@@ -881,7 +881,7 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
       n_stages_reri_significant = sum(reri_lower90 > 0),
       model_aic = AIC(modelo),
       model_deviance = deviance(modelo),
-      formula_used = formula_parts,  # Guardo fórmula usada
+      formula_used = formula_parts,  # Store the formula that was used
       nichd_spline = nichd_spline,
       include_nichd = include_nichd,
       spline_individuales = spline_individuales,
@@ -904,43 +904,43 @@ fit_gam <- function(drugA_id, drugB_id, event_id, ade_data,
 }
 
 ################################################################################
-# Cálculo de IOR clásico 
+# Classical IOR calculation
 ################################################################################
 
-# Calcula IOR clásico usando tablas 2x2 por etapa
+# Computes classical IOR using 2x2 contingency tables per stage
 #
-# parámetros:
-# drugA_id: id droga A (ATC concept_id)
-# drugB_id: id droga B (ATC concept_id)
-# event_id: id del evento adverso (MedDRA concept_id)
-# ade_data: data.table con dataset
+# Parameters:
+# drugA_id: Drug A ID (ATC concept_id)
+# drugB_id: Drug B ID (ATC concept_id)
+# event_id: Adverse event ID (MedDRA concept_id)
+# ade_data: data.table with the dataset
 # 
-# return: Lista con stage, ior_classic, ior_classic_lower90, ior_classic_upper90
+# Return: List with stage, ior_classic, ior_classic_lower90, ior_classic_upper90
 # 
-# Implementación:
-# Para cada etapa j:
-# tabla 2x2:
-# a: evento + coadmin
-# b: sin evento + coadmin
-# c: evento + sin coadmin
-# d: sin evento + sin coadmin
+# Implementation:
+# For each stage j:
+# 2x2 contingency table:
+# a: event + co-administration
+# b: no event + co-administration
+# c: event + no co-administration
+# d: no event + no co-administration
 # OR_11 = (a/b) / (c/d) = ad/bc
-# OR_10 = reportes con A solo
-# OR_01 = reportes con B solo
-# OR_00 = reportes sin A ni B
+# OR_10 = reports with drug A only
+# OR_01 = reports with drug B only
+# OR_00 = reports with neither A nor B
 # IOR = (OR_11 × OR_00) / (OR_10 × OR_01)
-# calcula IC90 por método de Woolf (escala log)
+# 90% CI computed using the Woolf method (log scale)
 
 calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
   
-  # Identificación de reportes
+  # Report identification
   reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
   reportes_droga_b <- unique(ade_data[atc_concept_id == drugB_id, safetyreportid])
   
-  # Reportes con el evento (reales)
+  # Reports with the event (real/observed)
   reportes_ea_real <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
   
-  # Reportes con evento simulado 
+  # Reports with simulated event
   reportes_ea_sim <- if("simulated_event" %in% names(ade_data)) {
     unique(ade_data[
       simulated_event == TRUE & simulated_meddra == event_id,
@@ -950,59 +950,59 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
     integer(0)
   }
   
-  # reales + simulados
+  # Real + simulated events combined
   reportes_ea <- union(reportes_ea_real, reportes_ea_sim)
   
-  # Dataset único por reporte con exposiciones
+  # One row per report with exposure indicators
   datos_unicos <- unique(ade_data[, .(safetyreportid, nichd, nichd_num)])
   datos_unicos[, ea_ocurrio := as.integer(safetyreportid %in% reportes_ea)]
   datos_unicos[, droga_a := as.integer(safetyreportid %in% reportes_droga_a)]
   datos_unicos[, droga_b := as.integer(safetyreportid %in% reportes_droga_b)]
   
-  # Cálculo por etapa
-  resultados_por_etapa <- datos_unicos[, {
+  # Per-stage calculation
+  stage_results <- datos_unicos[, {
     
-    # Tabla 2x2 para cada combinación de exposición
-    # Grupo 11: A + B (coadministración)
+    # 2x2 table for each exposure combination
+    # Group 11: A + B (co-administration)
     n_11_evento <- sum(droga_a == 1 & droga_b == 1 & ea_ocurrio == 1)
     n_11_no_evento <- sum(droga_a == 1 & droga_b == 1 & ea_ocurrio == 0)
     
-    # Grupo 10: solo A
+    # Group 10: drug A only
     n_10_evento <- sum(droga_a == 1 & droga_b == 0 & ea_ocurrio == 1)
     n_10_no_evento <- sum(droga_a == 1 & droga_b == 0 & ea_ocurrio == 0)
     
-    # Grupo 01: solo B
+    # Group 01: drug B only
     n_01_evento <- sum(droga_a == 0 & droga_b == 1 & ea_ocurrio == 1)
     n_01_no_evento <- sum(droga_a == 0 & droga_b == 1 & ea_ocurrio == 0)
     
-    # Grupo 00: ni A ni B
+    # Group 00: neither A nor B
     n_00_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 1)
     n_00_no_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 0)
     
-    # calculo de OR para cada grupo
+    # Compute OR for each exposure group
     or_11 <- (n_11_evento / n_11_no_evento) / (n_00_evento / n_00_no_evento)
     or_10 <- (n_10_evento / n_10_no_evento) / (n_00_evento / n_00_no_evento)
     or_01 <- (n_01_evento / n_01_no_evento) / (n_00_evento / n_00_no_evento)
-    or_00 <- 1  # por definición
+    or_00 <- 1 # by definition
     
-    # como por definición OR₀₀ = 1, es lo mismo que hacer IOR = OR₁₁ / OR₁₀ . OR₀₁
-    # calculo de IOR
+    # Since OR₀₀ = 1 by definition, this simplifies to IOR = OR₁₁ / (OR₁₀ · OR₀₁)
+    # IOR computation
     ior_val <- (or_11 * or_00) / (or_10 * or_01)
     log_ior <- log(ior_val)
     
-    # Varianza en escala log (método de Woolf)
+    # Variance on the log scale (Woolf method)
     var_log_ior <- (1/n_11_evento + 1/n_11_no_evento +
                 1/n_10_evento + 1/n_10_no_evento +
                 1/n_01_evento + 1/n_01_no_evento +
                 1/n_00_evento + 1/n_00_no_evento)
     se_log_ior <- sqrt(var_log_ior)
     
-    # IC90 en escala log
+    # 90% CI on the log scale
     z90 <- qnorm(0.95)
     log_ior_lower90 <- log_ior - z90 * se_log_ior
     log_ior_upper90 <- log_ior + z90 * se_log_ior
     
-    # IOR en escala original
+    # IOR back-transformed to the original scale
     ior_lower90 <- exp(log_ior_lower90)
     ior_upper90 <- exp(log_ior_upper90)
     
@@ -1015,58 +1015,58 @@ calculate_classic_ior <- function(drugA_id, drugB_id, event_id, ade_data) {
       log_ior_classic_lower90 = log_ior_lower90,
       log_ior_classic_upper90 = log_ior_upper90,
       se_log_ior_classic = se_log_ior,
-      # diagnósticos
+      # Diagnostics
       n_11_evento = n_11_evento,
       n_11_total = n_11_evento + n_11_no_evento
     )
     
   }, by = nichd_num]
   
-  # ordeno por etapa
-  setorder(resultados_por_etapa, nichd_num)
+  # Order by stage
+  setorder(stage_results, nichd_num)
   
   return(list(
     success = TRUE,
-    results_by_stage = resultados_por_etapa
+    results_by_stage = stage_results
   ))
 }
 
 ################################################################################
-# Cálculo de RERI clásico 
+# Stratified RERI calculation
 ################################################################################
 
-# Calcula RERI clásico usando tablas 2x2 por etapa
+# Computes stratified RERI using 2x2 contingency tables per stage
 #
-# Parámetros:
-# drugA_id: id droga A (ATC concept_id)
-# drugB_id: id droga B (ATC concept_id)
-# event_id: id del evento adverso (MedDRA concept_id)
-# ade_data: data.table con dataset (puede ser aumentado)
+# Parameters:
+# drugA_id: Drug A ID (ATC concept_id)
+# drugB_id: Drug B ID (ATC concept_id)
+# event_id: Adverse event ID (MedDRA concept_id)
+# ade_data: data.table with the dataset (may be augmented)
 # 
-# Return: Lista con success, results_by_stage (stage, RERI, RERI_lower90, RERI_upper90)
+# Return: List with success, results_by_stage (stage, RERI, RERI_lower90, RERI_upper90)
 # 
-# Implementación:
-# Para cada etapa j:
-# Construye tabla 2x2:
-# R11: riesgo con A+B
-# R10: riesgo con solo A
-# R01: riesgo con solo B
-# R00: riesgo sin A ni B (referencia)
+# Implementation:
+# For each stage j:
+# Builds a 2x2 table:
+# R11: risk with A+B
+# R10: risk with A only
+# R01: risk with B only
+# R00: risk with neither A nor B (reference)
 # RERI = R11 - R10 - R01 + 1
-# IC90% usando método delta (propagación de varianzas)
-# Varianza de cada riesgo: Var(R) = p(1-p)/n
-# 5Varianza de RERI: suma de varianzas (asumiendo independencia)
+# 90% CI using the delta method (variance propagation)
+# Variance of each risk: Var(R) = p(1-p)/n
+# RERI variance: sum of individual variances (assuming independence)
 
 calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
   
-  # Identificación de reportes
+  # Report identification
   reportes_droga_a <- unique(ade_data[atc_concept_id == drugA_id, safetyreportid])
   reportes_droga_b <- unique(ade_data[atc_concept_id == drugB_id, safetyreportid])
   
-  # Reportes con el evento (reales)
+  # Reports with the event (real/observed)
   reportes_ea_real <- unique(ade_data[meddra_concept_id == event_id, safetyreportid])
   
-  # Reportes con evento simulado (si existen)
+  # Reports with simulated event (if present)
   reportes_ea_sim <- if("simulated_event" %in% names(ade_data)) {
     unique(ade_data[
       simulated_event == TRUE & simulated_meddra == event_id,
@@ -1076,36 +1076,36 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
     integer(0)
   }
   
-  # Combinar reales + simulados
+  # Combine real + simulated events
   reportes_ea <- union(reportes_ea_real, reportes_ea_sim)
   
-  # Dataset único por reporte con exposiciones
+  # One row per report with exposure indicators
   datos_unicos <- unique(ade_data[, .(safetyreportid, nichd, nichd_num)])
   datos_unicos[, ea_ocurrio := as.integer(safetyreportid %in% reportes_ea)]
   datos_unicos[, droga_a := as.integer(safetyreportid %in% reportes_droga_a)]
   datos_unicos[, droga_b := as.integer(safetyreportid %in% reportes_droga_b)]
   
-  # Cálculo por etapa
-  resultados_por_etapa <- datos_unicos[, {
+  # Per-stage calculation
+  stage_results <- datos_unicos[, {
     
-    # Conteos para cada combinación de exposición
-    # Grupo 11: A + B (coadministración)
+    # Counts for each exposure combination
+    # Group 11: A + B (co-administration)
     n_11_evento <- sum(droga_a == 1 & droga_b == 1 & ea_ocurrio == 1)
     n_11_total <- sum(droga_a == 1 & droga_b == 1)
     
-    # Grupo 10: solo A
+    # Group 10: drug A only
     n_10_evento <- sum(droga_a == 1 & droga_b == 0 & ea_ocurrio == 1)
     n_10_total <- sum(droga_a == 1 & droga_b == 0)
     
-    # Grupo 01: solo B
+    # Group 01: drug B only
     n_01_evento <- sum(droga_a == 0 & droga_b == 1 & ea_ocurrio == 1)
     n_01_total <- sum(droga_a == 0 & droga_b == 1)
     
-    # Grupo 00: ni A ni B (referencia)
+    # Group 00: neither A nor B (for reference)
     n_00_evento <- sum(droga_a == 0 & droga_b == 0 & ea_ocurrio == 1)
     n_00_total <- sum(droga_a == 0 & droga_b == 0)
     
-    # Validación: todos los grupos deben tener datos
+    # Validation: all groups must have observations
     if (n_11_total == 0 || n_10_total == 0 || n_01_total == 0 || n_00_total == 0) {
       data.table(      
         stage = nichd_num[1],
@@ -1124,7 +1124,7 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
         insufficient_data = TRUE
       )
   }
-    else { # calculo de riesgos, proporciones
+    else {  # Compute risks as proportions
       R11 <- n_11_evento / n_11_total
       R10 <- n_10_evento / n_10_total
       R01 <- n_01_evento / n_01_total
@@ -1146,14 +1146,14 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
       } else {
         reri_val <- R11/R00 - R10/R00 - R01/R00 + 1
 
-        # Varianzas binomiales de cada riesgo
+        # Binomial variances for each risk
         var_r <- function(r, n) ifelse(r > 0 & r < 1, r*(1-r)/n, 0.25/n)
         var_R11 <- var_r(R11, n_11_total)
         var_R10 <- var_r(R10, n_10_total)
         var_R01 <- var_r(R01, n_01_total)    
         var_R00 <- var_r(R00, n_00_total)
 
-        # Varianza de RERI por delta method:
+        # RERI variance by delta method:
         # RERI = (R11 - R10 - R01) / R00 + 1
         # dRERI/dR11 =  1/R00
         # dRERI/dR10 = -1/R00
@@ -1164,7 +1164,7 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
           numerador^2 * var_R00 / R00^4
         se_reri <- sqrt(var_reri)
 
-        # IC90%
+        # 90% CI
         z90 <- qnorm(0.95)
         reri_lower90 <- reri_val - z90 * se_reri
         reri_upper90 <- reri_val + z90 * se_reri
@@ -1175,9 +1175,9 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
           RERI_classic_lower90 = reri_lower90,
           RERI_classic_upper90 = reri_upper90,
           RERI_classic_se = se_reri,
-          # Riesgos individuales para diagnóstico
+          # Individual risks for diagnostics
           R11 = R11, R10 = R10, R01 = R01, R00 = R00,
-          # Conteos diagnósticos
+          # Diagnostic counts
           n_11_evento = n_11_evento, n_11_total = n_11_total,
           n_10_evento = n_10_evento, n_10_total = n_10_total,
           n_01_evento = n_01_evento, n_01_total = n_01_total,
@@ -1187,40 +1187,40 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
       }
     }
   }, by = nichd_num]
-  # Ordenar por etapa
-  setorder(resultados_por_etapa, nichd_num)
+  # Order by stage
+  setorder(stage_results, nichd_num)
   
-  # Verificar si hay datos suficientes en al menos una etapa
-  if (all(is.na(resultados_por_etapa$RERI_classic))) {
+  # Check whether there is sufficient data in at least one stage
+  if (all(is.na(stage_results$RERI_classic))) {
     return(list(
       success = FALSE,
       message = "Datos insuficientes en todas las etapas",
-      results_by_stage = resultados_por_etapa
+      results_by_stage = stage_results
     ))
   }
   
   return(list(
     success = TRUE,
-    results_by_stage = resultados_por_etapa
+    results_by_stage = stage_results
   ))
 }
 
 ################################################################################
-# Funcion de normalizado
+# Normalization function
 ################################################################################
 
-# Normaliza resultado de triplete con listas vacías por defecto
+# Normalizes a triplet result, replacing NULL list fields with default vectors
 #
 # Return:
-# Lista normalizada con vectores por defecto en lugar de NULL
+# Normalized list with default vectors instead of NULL
 # 
-# Implementación:
-# Previene errores de rbindlist cuando algunos campos de lista son NULL
-# Aparentemente necesario cuando uso paralelización por si falla la convergencia de algunos tripletes
+# Implementation:
+# Prevents rbindlist errors when some list-type fields are NULL
+# Necessary in parallelized contexts where some triplets may fail to converge
 
 normalize_triplet_result <- function(result) {
   
-  # campo tipo lista de columnas que deben existir
+  # List-type fields that must be present
   list_fields <- c("stage", "log_ior", "log_ior_lower90", "ior_values",
                   "log_ior_classic", "log_ior_classic_lower90", "ior_classic")
   
@@ -1230,7 +1230,7 @@ normalize_triplet_result <- function(result) {
     }
   }
   
-  # Si las listas están vacías, llenar con valores por defecto
+  # If lists are empty, fill with default values
   if (length(result$stage[[1]]) == 0) {
     result$stage <- list(1:7)
   }
@@ -1263,26 +1263,26 @@ normalize_triplet_result <- function(result) {
 }
 
 ################################################################################
-# Función de bootstrap por dinámica y etapa
+# Bootstrap function by dynamic type and stage
 ################################################################################
 
-# Realiza bootstrap de diferencia de log-IOR entre dinámica y base (uniform)
+# Bootstraps the difference in log-IOR between a dynamic type and the baseline (uniform)
 #
-# Parámetros:
-# data: data.table con columnas `dynamic`, `stage` y `log_ior`
-# dynamic_type: nombre de la dinámica 
-# stage_num: número de etapa NICHD.
-# n_boot: número de réplicas bootstrap (por defecto 100)
+# Parameters:
+# data: data.table with columns `dynamic`, `stage`, and `log_ior`
+# dynamic_type: name of the dynamic type
+# stage_num: NICHD stage number
+# n_boot: number of bootstrap replicates (default 100)
 #
 # Return:
-# data.table con estadísticos de bootstrap para la diferencia (media, sd, IC)
+# data.table with bootstrap statistics for the difference (mean, sd, CI)
 
 bootstrap_dynamic_diff <- function(data, dynamic_type, stage_num, n_boot = 100) {
   
-  # Datos para la dinámica objetivo
+  # Data for the target dynamic
   target_data <- data[dynamic == dynamic_type & stage == stage_num, log_ior]
   
-  # Datos para uniform (baseline)
+  # Data for the uniform baseline
   uniform_data <- data[dynamic == "uniform" & stage == stage_num, log_ior]
   
   if (length(target_data) < 3 || length(uniform_data) < 3) {
@@ -1307,19 +1307,19 @@ bootstrap_dynamic_diff <- function(data, dynamic_type, stage_num, n_boot = 100) 
 }
 
 ################################################################################
-# Función de bootstrap por dinámica y etapa (RERI)
+# Bootstrap function by dynamic type and stage (RERI)
 ################################################################################
 
-# Realiza bootstrap de diferencia de RERI entre dinámica y base (uniform)
+# Bootstraps the difference in RERI between a dynamic type and the baseline (uniform)
 #
-# Parámetros:
-# data: data.table con columnas `dynamic`, `stage` y `reri`
-# dynamic_type: nombre de la dinámica
-# stage_num: número de etapa NICHD
-# n_boot: número de réplicas bootstrap (por defecto 100)
+# Parameters:
+# data: data.table with columns `dynamic`, `stage`, and `reri`
+# dynamic_type: name of the dynamic type
+# stage_num: NICHD stage number
+# n_boot: number of bootstrap replicates (default 100)
 #
 # Return:
-# data.table con estadísticos de bootstrap para la diferencia (media, sd, IC)
+# data.table with bootstrap statistics for the difference (mean, sd, CI)
 
 bootstrap_dynamic_diff_reri <- function(data, dynamic_type, stage_num, n_boot = 100) {
   
@@ -1331,50 +1331,50 @@ bootstrap_dynamic_diff_reri <- function(data, dynamic_type, stage_num, n_boot = 
   }
   
   boot_diffs <- replicate(n_boot, {
-    median(sample(target_data,  replace = TRUE)) -   # <-- median
+    median(sample(target_data,  replace = TRUE)) -   # median
     median(sample(uniform_data, replace = TRUE))
   })
   
   data.table(
-    mean_diff = median(boot_diffs, na.rm = TRUE),    # <-- median
+    mean_diff = median(boot_diffs, na.rm = TRUE),    #  median
     ci_lower  = quantile(boot_diffs, 0.025, na.rm = TRUE),
     ci_upper  = quantile(boot_diffs, 0.975, na.rm = TRUE)
   )
 }
 
 ################################################################################
-# Función para procesar un solo triplete positivo con sensibilidad
+# Function to process a single positive triplet with sensitivity analysis
 ################################################################################
 
-# Procesa un triplete individual con todos los niveles de reducción
-# Diseñada para usar en paralelo por lotes (consume mucha memoria)
+# Processes a single positive triplet across all reduction levels
+# Designed for batch parallel execution (memory-intensive)
 #
-# Parámetros:
-# idx: id del triplete en pos_meta
-# pos_meta: data.table con metadatos de tripletes positivos 
-# ade_raw_dt: data.table con dataset original 
-# reduction_levels: vector numérico con porcentajes de reducción a aplicar
-# parámetros de configuración para la formula GAM
-# base_seed: semilla base para reproducibilidad 
+# Parameters:
+# idx: triplet index in pos_meta
+# pos_meta: data.table with positive triplet metadata
+# ade_raw_dt: data.table with the original dataset
+# reduction_levels: numeric vector of reduction percentages to apply
+# GAM formula configuration parameters
+# base_seed: base seed for reproducibility
 #
 # Return:
-#  data.table combinado con resultados para todos los niveles de reducción
+#  Combined data.table with results for all reduction levels
 #
-# Implementación:
-# inject_signal() para crear dataset aumentado independiente
-# Para cada nivel de reducción --> reduce dataset, ajusta GAM, calcula IOR/RERI clásicos
-# fit_reduced_model() como wrapper de ajuste
+# Implementation:
+# inject_signal() to create an independent augmented dataset
+# For each reduction level --> reduce dataset, fit GAM, compute classical IOR/RERI
+# fit_reduced_model() as a wrapper for fitting
 
 process_single_positive <- function(idx, pos_meta, ade_raw_dt, reduction_levels, 
                                     spline_individuales, include_sex, include_stage_sex,
                                     k_spline, bs_type, select, nichd_spline, z90, base_seed = 9427) {
-  # Seed único para el triplete (mismo esquema que 10_augmentation)
+  # Unique seed per triplet (same scheme as 10_augmentation)
   set.seed(9427 + idx)
   
   rowt <- pos_meta[idx]
   rowt$type <- "positive"
   
-  # Creación de dataset aumentado INDEPENDIENTE
+  # Create INDEPENDENT augmented dataset
   inj_result <- tryCatch({
     inject_signal(
       drugA_id = rowt$drugA,
@@ -1411,7 +1411,7 @@ process_single_positive <- function(idx, pos_meta, ade_raw_dt, reduction_levels,
   rowt$t_ij <- t_ij_val
 
   if (!inj_success) {
-    # Resultado de fallo sin sensibilidad
+    # Failure result with no sensitivity analysis
     base_result <- data.table(
       triplet_id = idx,
       drugA = rowt$drugA,
@@ -1464,10 +1464,10 @@ process_single_positive <- function(idx, pos_meta, ade_raw_dt, reduction_levels,
     return(base_result)
   }
 
-  # Loop de sensibilidad
+  # Sensitivity loop
   all_results <- list()
   
-  # Resultado base (0% reducción)
+  # Base result (0% reduction)
   base_result <- fit_reduced_model(inj_result$ade_aug, rowt, 0)
   base_result$n_injected <- n_injected_val
   base_result$injection_success <- TRUE
@@ -1475,15 +1475,15 @@ process_single_positive <- function(idx, pos_meta, ade_raw_dt, reduction_levels,
   
   all_results[[1]] <- base_result
   
-  # Loop sobre niveles de reducción
+  # Loop over reduction levels
   for (red_pct in reduction_levels) {
-    # Reducir dataset
+    # Reduce dataset
     ade_reduced <- reduce_dataset_by_stage(
       inj_result$ade_aug, 
       red_pct,
-      seed = base_seed + idx)  # Propagación de seed para mayor reproductibilidad
+      seed = base_seed + idx)   # Seed propagation for greater reproducibility
     
-    # Ajustar modelo en dataset reducido
+    # Fit model on reduced dataset
     reduced_result <- fit_reduced_model(ade_reduced, rowt, red_pct)
     reduced_result$n_injected <- n_injected_val
     reduced_result$injection_success <- TRUE
@@ -1496,30 +1496,30 @@ process_single_positive <- function(idx, pos_meta, ade_raw_dt, reduction_levels,
   
   rm(inj_result); gc(verbose = FALSE)
   
-  # Combinar todos los resultados de sensibilidad
+  # Combine all sensitivity results
   combined_results <- rbindlist(all_results, fill = TRUE)
   
   return(combined_results)
 }
 
 ################################################################################
-# Función auxiliar: Reducir dataset por etapas
+# Helper function: Reduce dataset by stage
 ################################################################################
 
-# Reduce un dataset aumentado removiendo un porcentaje aleatorio de filas por etapa
+# Reduces an augmented dataset by randomly removing a percentage of rows per stage
 # 
-# Parámetros:
-# ade_aug: data.table aumentado
-# reduction_pct: porcentaje a remover (ej: 10 para 10%)
-# nichd_col: columna con la etapa NICHD
-# seed: implementado para hacer reproductible 
+# Parameters:
+# ade_aug: augmented data.table
+# reduction_pct: percentage to remove (e.g. 10 for 10%)
+# nichd_col: column containing the NICHD stage
+# seed: provided for reproducibility
 #
 # Return:
-# data.table reducido
+# Reduced data.table
 
 reduce_dataset_by_stage <- function(ade_aug, reduction_pct, nichd_col = "nichd", seed = NULL) {
   
-  # Para cada etapa, remover el porcentaje especificado
+  # For each stage, remove the specified percentage of rows
   stages <- unique(ade_aug[[nichd_col]])
   
   reduced_rows <- lapply(stages, function(stage) {
@@ -1528,11 +1528,11 @@ reduce_dataset_by_stage <- function(ade_aug, reduction_pct, nichd_col = "nichd",
     n_keep <- ceiling(n_rows * (1 - reduction_pct / 100))
     
     if (n_keep < 1 && n_rows > 0) {
-      n_keep <- 1  # Mantener al menos una fila si hay datos
+      n_keep <- 1  # Keep at least one row if data is present
     }
     
     if (n_rows > 0) {
-      # Seed determinístico basado en stage + reduction_pct + dimensiones
+      # Deterministic seed based on stage + reduction_pct + dimensions
       if (!is.null(seed)) {
         local_seed <- seed + as.integer(stage) * 100 + as.integer(reduction_pct) * 10
         set.seed(local_seed)
@@ -1547,25 +1547,25 @@ reduce_dataset_by_stage <- function(ade_aug, reduction_pct, nichd_col = "nichd",
 }
 
 ################################################################################
-# Función de ajuste del modelo en dataset reducido
+# Model fitting function on a reduced dataset
 ################################################################################
 
-# Ajusta modelo GAM e IOR/RERI clásicos en un dataset reducido
-# Wrapper de funciones para ajuste y reducción del dataset 
+# Fits GAM and classical IOR/RERI models on a reduced dataset
+# Wrapper function for model fitting and dataset reduction
 #
-# Parámetros:
-# ade_reduced: dataset reducido
-# rowt: metadata del triplete (drugA, drugB, meddra, etc.)
-# reduction_pct: porcentaje de reducción aplicado
+# Parameters:
+# ade_reduced: reduced dataset
+# rowt: triplet metadata (drugA, drugB, meddra, etc.)
+# reduction_pct: reduction percentage applied
 # 
 # Return:
-# data.table con resultados del ajuste
+# data.table with fitting results
 
 fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
   
   counts_reduced <- calc_basic_counts(ade_reduced, rowt$drugA, rowt$drugB, rowt$meddra)
   
-  # Ajuste GAM
+  # GAM fitting
   model_res <- tryCatch({
     fit_gam(
       drugA_id = rowt$drugA,
@@ -1589,7 +1589,7 @@ fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
     )
   })
   
-  # Cálculo IOR clásico
+  # Classical IOR computation
   classic_res <- tryCatch({
     calculate_classic_ior(
       drugA_id = rowt$drugA,
@@ -1601,7 +1601,7 @@ fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
     list(success = FALSE)
   })
   
-  # Cálculo RERI clásico
+  # Classical RERI computation
   classic_reri <- tryCatch({
     calculate_classic_reri(
       drugA_id = rowt$drugA,
@@ -1613,7 +1613,7 @@ fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
     list(success = FALSE)
   })
   
-  # Preparar resultado
+  # Prepare result
   if (!model_res$success) {
     result <- data.table(
       triplet_id = rowt$triplet_id,
@@ -1666,7 +1666,7 @@ fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
     return(result)
   }
   
-  # Resultado exitoso
+  # Successful result
   result <- data.table(
     triplet_id = rowt$triplet_id,
     drugA = rowt$drugA,
@@ -1719,17 +1719,17 @@ fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
 }
 
 ################################################################################
-# Formula de permutación para distribución nula
+# Permutation function for the null distribution
 ################################################################################
 
-# Permuta eventos entre reportes
+# Permutes events across reports
 # 
-# Parámetros:
-# perm_events: si TRUE, permuta eventos (meddra_concept_id)
-# perm_drugs: si TRUE, permuta drogas también entre reportes
+# Parameters:
+# perm_events: if TRUE, permutes events (meddra_concept_id)
+# perm_drugs: if TRUE, also permutes drugs across reports
 #
-# Utiliza pool de reportes seleccionados en 10_augmentation (pool_meta)
-# Rompe asociación droga-evento para tener un ground truth negativo
+# Uses the pool of reports selected in 10_augmentation (pool_meta)
+# Breaks the drug-event association to generate a negative ground truth
 
 permute_pool <- function(pool_meta, niveles_nichd, 
                          perm_events = TRUE, 
@@ -1769,7 +1769,7 @@ permute_pool <- function(pool_meta, niveles_nichd,
   pool_copy[, .(safetyreportid, nichd, nichd_num, drugs_perm, events_perm)]
 }
 
-# Función para volver a meter los permutados en el dataset original antes de ajustar
+# Function to reintroduce permuted reports into the original dataset before model fitting
 
 reintroduce_permuted_reports <- function(ade_original, permuted_pool) {
   
@@ -1795,25 +1795,25 @@ reintroduce_permuted_reports <- function(ade_original, permuted_pool) {
 }
 
 ################################################################################
-# Función de expansión
+# Expansion function
 ################################################################################
 
-# Expande resultados de tripletes a formato largo con todas las métricas
+# Expands triplet results to long format with all metrics
 #
-# Parámetros:
-# dt: data.table con resultados de tripletes (con columnas tipo lista)
-# label_val: etiqueta para clasificación (1 = positivo, 0 = negativo)
-# null_thresholds_dt: data.table con umbrales de la distribución nula por etapa
-# use_threshold_ior: si TRUE, aplica umbral de IOR de la distribución nula
-# use_threshold_reri: si TRUE, aplica umbral de RERI de la distribución nula
+# Parameters:
+# dt: data.table with triplet results (with list-type columns)
+# label_val: classification label (1 = positive, 0 = negative)
+# null_thresholds_dt: data.table with null distribution thresholds per stage
+# use_threshold_ior: if TRUE, applies the IOR null distribution threshold
+# use_threshold_reri: if TRUE, applies the RERI null distribution threshold
 # 
 # Return:
-# data.table expandido con una fila por triplete-etapa
+# Expanded data.table with one row per triplet-stage
 # 
-# Implementación:
-# Descompone columnas tipo lista (stage, log_ior, etc.) en filas individuales
-# Une con umbrales de la distribución nula
-# Mantiene metadatos del triplete (dynamic, t_ij, n_coadmin)
+# Implementation:
+# Unpacks list-type columns (stage, log_ior, etc.) into individual rows
+# Merges with null distribution thresholds
+# Retains triplet-level metadata (dynamic, t_ij, n_coadmin)
 
 expand_clean_all_metrics <- function(dt, label_val, null_thresholds_dt,
                                      use_threshold_ior = TRUE, use_threshold_reri = TRUE) {
@@ -1839,7 +1839,7 @@ expand_clean_all_metrics <- function(dt, label_val, null_thresholds_dt,
     gam_reri <- unlist(reri_values)
     gam_reri_lower90 <- unlist(reri_lower90)
     
-    # Estratificado
+    # Classical stratified metrics
     cls_log_ior <- unlist(log_ior_classic)
     cls_log_ior_lower90 <- unlist(log_ior_classic_lower90)
     cls_reri <- unlist(RERI_classic)
@@ -1858,7 +1858,7 @@ expand_clean_all_metrics <- function(dt, label_val, null_thresholds_dt,
         gam_log_ior_lower90 = gam_log_ior_lower90[1:n],
         gam_reri = gam_reri[1:n],
         gam_reri_lower90 = gam_reri_lower90[1:n],
-        # Estratificado
+        # Stratified
         classic_log_ior = cls_log_ior[1:n],
         classic_log_ior_lower90 = cls_log_ior_lower90[1:n],
         classic_reri = cls_reri[1:n],
@@ -1874,47 +1874,46 @@ expand_clean_all_metrics <- function(dt, label_val, null_thresholds_dt,
   expanded[, nichd := niveles_nichd[stage_num]]
   expanded[, label := label_val]
   
-  # Merge con thresholds
+  # Merge with null distribution thresholds
   expanded <- merge(expanded, null_thresholds_dt, 
                    by.x = "stage_num", by.y = "stage", all.x = TRUE)
   
-  # Guardado de parámetros de uso
+  # Store threshold usage parameters
   expanded[, `:=`(
     use_threshold_ior = use_threshold_ior,
     use_threshold_reri = use_threshold_reri
   )]
-  
   return(expanded)
 }
 
 ################################################################################
-# Función de cálculo de poder estadístico GAM
+# Statistical power calculation function — GAM method
 ################################################################################
 
-# Calcula poder estadístico filtrando por tamaño de efecto y cantidad de reportes de coadmin
+# Computes statistical power by filtering on effect size and co-administration report count
 #
-# parámetros:
-# data_pos: data.table con tripletes positivos expandidos
-# data_neg: data.table con tripletes negativos expandidos (no utilizado)
-# target_power: nivel de poder objetivo (0.80)
-# metric_n: nombre de la columna a usar como filtro de cantidad ("n_coadmin" o "n_events")
-# grid_resolution: número de pasos para la grilla de búsqueda (30x30 por defecto) 
-# use_threshold_ior: si TRUE, usa umbral de la distribución nula
-# use_threshold_reri: si TRUE, usa umbral de la distribución nula
-# detection: modo de detección ("log-ior", "reri", o "double")
+# Parameters:
+# data_pos: data.table with expanded positive triplets
+# data_neg: data.table with expanded negative triplets (not used)
+# target_power: target power level (0.80)
+# metric_n: column name to use as count filter ("n_coadmin" or "n_events")
+# grid_resolution: number of steps for the search grid (default 30x30)
+# use_threshold_ior: if TRUE, applies the IOR null distribution threshold
+# use_threshold_reri: if TRUE, applies the RERI null distribution threshold
+# detection: detection mode ("log-ior", "reri", or "double")
 #
-# return: 
-# power_surface: data.table con t_threshold, n_threshold, power, len
-# t_star: umbral óptimo de t_ij (tamaño de poder en formula de inyección)
-# n_star: umbral óptimo de n_coadmin
-# superset_pos: tripletes positivos que cumplen los filtros óptimos
-# achieved_power: poder alcanzado en el punto óptimo
+# Return:
+# power_surface: data.table with t_threshold, n_threshold, power, len
+# t_star: optimal t_ij threshold (effect size in the injection formula)
+# n_star: optimal n_coadmin threshold
+# superset_pos: positive triplets passing the optimal filters
+# achieved_power: power achieved at the optimal point
 #
-# Implementación:
-# Genera una grilla 2D (según t_ij × n_coadmin) usando cuantiles
-# Para cada punto de grilla, calcula el poder estadístico (TP / (TP + FN))
-# Identifica configuración óptima que alcanza target_power con máxima retención
-# Agrega a nivel triplete: detección si CUALQUIER etapa detecta
+# Implementation:
+# Generates a 2D grid (t_ij × n_coadmin) using quantiles
+# For each grid point, computes statistical power (TP / (TP + FN))
+# Identifies the optimal configuration achieving target_power with maximum retention
+# Aggregates to triplet level: detected if ANY stage detects
 
 calculate_power_gam <- function(
   data_pos,
@@ -1922,34 +1921,28 @@ calculate_power_gam <- function(
   null_thresholds = NULL,
   metric_n = "n_coadmin",
   grid_resolution = 30,  
-  use_threshold_ior = TRUE,    # Parámetro explícito
-  use_threshold_reri = TRUE,   # Parámetro explícito
-  detection = "double"  ) {    # "ior", "reri", o "double"
+  use_threshold_ior = TRUE,   
+  use_threshold_reri = TRUE,   
+  detection = "double"  ) {    # "ior", "reri", or "double"
   
     library(data.table)
 
     ###########  
-    # 1. Preparación de datos positivos
+    # 1. Prepare positive data
     ###########
-  
     pos_clean <- copy(data_pos)
   
-    # Verificar existencia de columnas
-    if (!metric_n %in% names(pos_clean)) {
-      stop(sprintf("La columna métrica '%s' no existe en los datos.", metric_n))
-    }
-  
-    # Limpieza básica
+    # Basic cleaning
     pos_clean <- pos_clean[is.finite(t_ij) & is.finite(get(metric_n))]
   
-    # Merge thresholds si se pasan y faltan las columnas específicas
+    # Merge thresholds if provided and specific columns are missing
     if (!is.null(null_thresholds)) {
-      # Verificar si faltan las columnas de threshold que vamos a usar
+      # Check whether the threshold columns we need are missing
       need_merge <- FALSE
       if (use_threshold_ior && !"threshold_ior" %in% names(pos_clean)) need_merge <- TRUE
       if (use_threshold_reri && !"threshold_reri" %in% names(pos_clean)) need_merge <- TRUE
       if (need_merge) {
-        # Asegurar que null_thresholds tenga la columna 'stage'
+        # Ensure null_thresholds has a 'stage' column
         if (!"stage" %in% names(null_thresholds)) {
           stop("null_thresholds debe tener una columna llamada 'stage'")
         }
@@ -1964,7 +1957,7 @@ calculate_power_gam <- function(
     }
   
   ###########
-  # 2. Grilla 2D (t_ij x n_coadmin)
+  # 2. 2D grid (t_ij x n_coadmin)
   ###########
   
   probs_grid <- seq(0, 0.95, length.out = grid_resolution)
@@ -1978,12 +1971,12 @@ calculate_power_gam <- function(
   search_grid <- CJ(t_threshold = t_vals, n_threshold = n_vals)
   
   ###########
-  # 3. Cálculo de poder
+  # 3. Power calculation
   ###########
   
-  # Pre-cálculo de detección según parámetro "detection"
+  # Pre-compute detection flags according to the "detection" parameter
   
-  # Criterio IOR
+  # IOR criterion
   if (detection %in% c("ior", "double")) {
     if (use_threshold_ior) {
       if (!"threshold_ior" %in% names(pos_clean)) {
@@ -2001,7 +1994,7 @@ calculate_power_gam <- function(
     }
   }
   
-  # Criterio RERI
+  # RERI criterion
   if (detection %in% c("reri", "double")) {
     if (use_threshold_reri) {
       if (!"threshold_reri" %in% names(pos_clean)) {
@@ -2019,7 +2012,7 @@ calculate_power_gam <- function(
     }
   }
   
-  # Detección final según el modo elegido
+  # Final detection flag based on the chosen mode
   if (detection == "ior") {
     pos_clean[, is_detected := ior_detected]
   } else if (detection == "reri") {
@@ -2028,17 +2021,17 @@ calculate_power_gam <- function(
     pos_clean[, is_detected := ior_detected | reri_detected]
   }
 
-  # Agregación a nivel triplete: SI cualquier etapa detecta, triplete detectado
+  # Aggregate to triplet level: detected if ANY stage detects
   triplet_detection_gam <- pos_clean[, .(
     triplet_detected = any(is_detected, na.rm = TRUE),
     t_ij_triplet = unique(t_ij)[1],
     n_coadmin_triplet = unique(get(metric_n))[1]
   ), by = triplet_id]
   
-  # Iterar sobre grilla
+  # Iterate over the search grid
   power_surface <- search_grid[, {
     
-    # Filtro a nivel triplete: t_ij >= t_thresh AND n >= n_thresh
+    # Triplet-level filter: t_ij >= t_thresh AND n >= n_thresh
     idx_subset <- which(
       triplet_detection_gam$t_ij_triplet >= t_threshold & 
       triplet_detection_gam$n_coadmin_triplet >= n_threshold
@@ -2061,13 +2054,13 @@ calculate_power_gam <- function(
   power_surface <- power_surface[!is.na(power)]
   
   ###########
-  # 4. Identificación de punto óptimo
+  # 4. Identify optimal point
   ###########
   
   valid_configs <- power_surface[power >= target_power]
   
   if (nrow(valid_configs) == 0) {
-    message(sprintf("ADVERTENCIA (GAM): No se alcanzó poder objetivo (%.0f%%). Max: %.1f%%",
+    message(sprintf("No se alcanzó poder objetivo (%.0f%%). Max: %.1f%%",
                     target_power*100, max(power_surface$power, na.rm=TRUE)*100))
     best_config <- power_surface[which.max(power)]
   } else {
@@ -2080,7 +2073,7 @@ calculate_power_gam <- function(
   achieved_power <- best_config$power
   n_retained <- best_config$len
   
-  # Mensaje informativo según modo de detección
+  # Informational message based on detection mode
   detection_label <- switch(detection,
     "ior" = "solo IOR",
     "reri" = "solo RERI", 
@@ -2097,10 +2090,10 @@ calculate_power_gam <- function(
                   100 * n_retained / uniqueN(triplet_detection_gam$triplet_id)))
   
   ###########
-  # 5. Construcción de supersets
+  # 5. Build supersets
   ###########
   
-  # Superset positivo: TODAS las observaciones de tripletes que cumplen filtros
+  # Positive superset: ALL observations from triplets passing the filters
   triplets_passed <- triplet_detection_gam[
     t_ij_triplet >= t_star & n_coadmin_triplet >= n_star,
     triplet_id
@@ -2123,34 +2116,34 @@ calculate_power_gam <- function(
 }
 
 ################################################################################
-# Función de cálculo de poder estadístico para método Estratificado
+# Statistical power calculation function — Classical stratified method
 ################################################################################
 
-# Calcula poder estadístico filtrando por tamaño de efecto y cantidad de reportes de coadmin
+# Computes statistical power by filtering on effect size and co-administration report count
 #
-# Como los métodos clasicos tienen más a arrojar NAs o IC con Inf, parametrizo manejo de NA
+# Classical methods are more prone to producing NAs or infinite CIs, so NA handling is parameterized
 #
-# parámetros:
-# data_pos: data.table con tripletes positivos expandidos
-# data_neg: data.table con tripletes negativos expandidos
-# target_power: nivel de poder objetivo (0.80)
-# metric_n: nombre de la columna a usar como filtro de cantidad ("n_coadmin" o "n_events")
-# grid_resolution: número de pasos para la grilla de búsqueda (30x30 por defecto)
-# detection: para hacer superset de IOR, RERI o ambos 
-# na_remove: elegir manejo de NA. 
-#  TRUE: superset incluye TODOS los tripletes con criterios de detección mínima
-#  FALSE: superset final excluye NA aunque cumplan criterios de umbral mínimo
+# Parameters:
+# data_pos: data.table with expanded positive triplets
+# data_neg: data.table with expanded negative triplets
+# target_power: target power level (0.80)
+# metric_n: column name to use as count filter ("n_coadmin" or "n_events")
+# grid_resolution: number of steps for the search grid (default 30x30)
+# detection: criterion for the superset — IOR, RERI, or both
+# na_remove: controls NA handling.
+#  TRUE: superset includes ALL triplets meeting minimum detection criteria
+#  FALSE: superset excludes NAs even if they meet the threshold criteria
 #
-# return: 
-# power_surface: data.table con t_threshold, n_threshold, power, len
-# t_star: umbral óptimo de t_ij
-# n_star: umbral óptimo de n_coadmin
-# superset_pos: tripletes positivos que cumplen los filtros óptimos
-# achieved_power: poder alcanzado en el punto óptimo
+# Return:
+# power_surface: data.table with t_threshold, n_threshold, power, len
+# t_star: optimal t_ij threshold
+# n_star: optimal n_coadmin threshold
+# superset_pos: positive triplets passing the optimal filters
+# achieved_power: power achieved at the optimal point
 #
-# Implementación:
-# Ver calculate_power_gam
-# cambios: calcula el poder a nivel de etapa
+# Implementation:
+# See calculate_power_gam
+# Key difference: power is computed at the stage level
 
 calculate_power_classic <- function(
   data_pos,
@@ -2158,11 +2151,11 @@ calculate_power_classic <- function(
   null_thresholds = NULL,
   metric_n = "n_coadmin",
   grid_resolution = 30,
-  detection = "double",  # "ior", "reri", o "double"
+  detection = "double",  # "ior", "reri", or "double"
   na_remove = "TRUE") {
     
   ###########
-  # 1. Preparación de datos positivos
+  # 1. Prepare positive data
   ###########
 
   detection <- match.arg(detection, choices = c("ior", "reri", "double"))
@@ -2172,8 +2165,7 @@ calculate_power_classic <- function(
   n_triplets_original_total <- uniqueN(pos_clean$triplet_id)
   n_obs_original_total <- nrow(pos_clean)
 
-  # Limpieza de NA según criterio de detección
-  
+  # Remove NAs according to the detection criterion  
   if (na_remove) {
     n_obs_before_na <- nrow(pos_clean)
     n_triplets_before_na <- uniqueN(pos_clean$triplet_id)
@@ -2185,12 +2177,12 @@ calculate_power_classic <- function(
       pos_clean <- pos_clean[!is.na(classic_log_ior_lower90) & !is.na(classic_reri_lower90)]
     }
   }
-  # registro los que se eliminaron
+  # Log how many were removed
   n_obs_after_na <- nrow(pos_clean)
   n_triplets_after_na <- uniqueN(pos_clean$triplet_id)
   n_triplets_lost_na <- n_triplets_before_na - n_triplets_after_na
  
-  # Limpieza básica
+  # Basic cleaning
   pos_clean <- pos_clean[is.finite(t_ij) & is.finite(get(metric_n))]
   
   if (!is.null(null_thresholds) && !"threshold" %in% names(pos_clean)) {
@@ -2204,7 +2196,7 @@ calculate_power_classic <- function(
   }
   
   ###########
-  # 2. Grilla 2D
+  # 2. 2D search grid
   ###########
   
   probs_grid <- seq(0, 0.95, length.out = grid_resolution)
@@ -2218,44 +2210,44 @@ calculate_power_classic <- function(
   search_grid <- CJ(t_threshold = t_vals, n_threshold = n_vals)
   
   ###########
-  # 3. Cálculo de poder 
+  # 3. Power calculation
   ###########
   
-  # cada fila (triplet_id + stage) es una observación independiente
-  # porque el método está estratificado por etapa
+  # Each row (triplet_id + stage) is an independent observation
+  # because the method is stratified by stage
   
-  # Pre-cálculo de detección según parámetro 'detection'
+  # Pre-compute detection flags according to the 'detection' parameter
   
   if (detection == "ior") {
-    # Solo IOR: IC90 > 0
+    # IOR only: 90% CI lower bound > 0
     pos_clean[, is_detected := (
       !is.na(classic_log_ior_lower90) & classic_log_ior_lower90 > 0
     )]
     
   } else if (detection == "reri") {
-    # Solo RERI: IC90 > 0
+    # RERI only: 90% CI lower bound > 0
     pos_clean[, is_detected := (
       !is.na(classic_reri_lower90) & classic_reri_lower90 > 0
     )]
     
   } else {  # detection == "double"
-    # Criterio doble: IOR O RERI, IC90 > 0
+    # Double criterion: IOR OR RERI, 90% CI lower bound > 0
     pos_clean[, is_detected := (
       (!is.na(classic_log_ior_lower90) & classic_log_ior_lower90 > 0) |
       (!is.na(classic_reri_lower90) & classic_reri_lower90 > 0)
     )]
   }
     
-  # guardo copia con detecciones
+  # Save a copy with detection flags
   pos_all_with_detection <- copy(pos_clean)
 
-  # se calcula a nivel observación para cada fila: t_ij, n_coadmin, detección
-  # No se agrega a nivel triplete
+  # Computed at the observation level (row): t_ij, n_coadmin, detection
+  # Not aggregated to triplet level
   
-  # Iterar sobre grilla
+  # Iterate over the search grid
   power_surface <- search_grid[, {
     
-    # Filtro a nivel de observación: t_ij >= t_thresh AND n >= n_thresh
+    # Observation-level filter: t_ij >= t_thresh AND n >= n_thresh
     idx_subset <- which(
       pos_clean$t_ij >= t_threshold & 
         pos_clean[[metric_n]] >= n_threshold
@@ -2278,7 +2270,7 @@ calculate_power_classic <- function(
   power_surface <- power_surface[!is.na(power)]
   
   ###########
-  # 4. Identificación de punto óptimo
+  # 4. Identify optimal point
   ###########
   
   valid_configs <- power_surface[power >= target_power]
@@ -2297,7 +2289,7 @@ calculate_power_classic <- function(
   achieved_power <- best_config$power
   n_retained <- best_config$len
   
-  # modo de detección para mensaje
+  # Detection mode for the message
   detection_label <- switch(detection,
     "ior" = "solo IOR",
     "reri" = "solo RERI", 
@@ -2305,18 +2297,18 @@ calculate_power_classic <- function(
   )
 
   ###########
-  # 5. Construcción de supersets
+  # 5. Build supersets
   ###########
   
-  # Superset positivo: observaciones que cumplen filtros
+  # Positive superset: observations passing the filters
   superset_pos <- pos_all_with_detection[t_ij >= t_star & get(metric_n) >= n_star]
   
-  # Métricas del superset
+  # Superset metrics
   n_retained_total <- nrow(superset_pos)
   n_detected_total <- sum(superset_pos$is_detected, na.rm = TRUE)
   power_total <- ifelse(n_retained_total > 0, n_detected_total / n_retained_total, 0)
 
-  # conteo de tripletes únicos que cumplen criterio de retención 
+  # Count of unique triplets meeting the retention criterion
   n_triplets_retained <- uniqueN(superset_pos$triplet_id)
   n_triplets_total <- uniqueN(pos_all_with_detection$triplet_id)
 
@@ -2332,7 +2324,7 @@ calculate_power_classic <- function(
                   100 * n_triplets_retained / n_triplets_total))
   message(sprintf("  Poder en muestra completa: %.1f%%", power_total * 100))
 
-  # Lineas para ver retención verdadera, contando NA que se excluyeron al principio de la función
+  # Lines to assess true retention, accounting for NAs excluded at the start of the function
   message(sprintf("  Tripletes retenidos (vs total original): %d / %d (%.1f%%) [INCLUYE NA]",
                   n_triplets_retained_vs_original, n_triplets_original_total,
                   pct_retained_vs_original))
@@ -2349,38 +2341,38 @@ calculate_power_classic <- function(
     metric_n_used = metric_n,
     detection_mode = detection,
     na_remove = na_remove,
-    achieved_power_total = power_total,  # poder en muestra completa
-    n_retained_grid = n_retained,  # retenidos en grid
-    n_retained_total = n_retained_total,  # retenidos totales
-    n_detected_total = n_detected_total,  # detectados totales
+    achieved_power_total = power_total,  # power in full sample
+    n_retained_grid = n_retained,  # retained in grid
+    n_retained_total = n_retained_total,  # total retained
+    n_detected_total = n_detected_total,  # total detected
     n_triplets_retained = n_triplets_retained,
     n_triplets_total = n_triplets_total
   ))
 }
 
 ################################################################################
-# Función para visualizar superficie de poder con grilla completa
+# Function to visualize the power surface over the full grid
 ################################################################################
 
-# Genera heatmap de superficie de poder con interpolación a grilla regular
-# Facetado por método
+# Generates a power surface heatmap with interpolation to a regular grid
+# Faceted by method
 #
-# Parámetros:
-# power_result: lista retornada por calculate_power_gam() o calculate_power_classic()
-# target_power: nivel de poder objetivo (para referencia visual)
-# detection: tipo de detección ("IOR", "RERI", "double")
-# t_range: rango del eje X (tamaño de efecto)
-# n_range: rango del eje Y (reportes de coadministración)
-# grid_size: tamaño de la grilla interpolada (default: 50x50 para suavidad)
+# Parameters:
+# power_result: list returned by calculate_power_gam() or calculate_power_classic()
+# target_power: target power level (for visual reference)
+# detection: detection type ("IOR", "RERI", or "double")
+# t_range: X-axis range (effect size)
+# n_range: Y-axis range (co-administration report count)
+# grid_size: interpolated grid size (default: 50x50 for smoothness)
 # 
 # Return:
-# Objeto ggplot con superficie interpolada completa
+# ggplot object with the full interpolated surface
 #
-# Implementación:
-# Remueve NAs e Inf
-# Interpola a grilla regular usando akima::interp (para datos faltantes)
-# Genera heatmap con geom_raster
-# retorna estadísticas del punto óptimo
+# Implementation:
+# Removes NAs and Inf values
+# Interpolates to a regular grid using akima::interp (for missing data)
+# Generates heatmap using geom_raster
+# Returns optimal point statistics
 
 plot_power_surface <- function(
   power_results_list,
@@ -2398,7 +2390,7 @@ plot_power_surface <- function(
   library(akima)
   
   ###########
-  # 1- Procesar múltiples superficies
+  # 1- Process multiple surfaces
   ###########
   
   all_surfaces <- rbindlist(lapply(names(power_results_list), function(met_name) {
@@ -2407,7 +2399,7 @@ plot_power_surface <- function(
     return(surface)
   }), fill = TRUE)
   
-  # Extraer parámetros óptimos para subtítulo
+  # Extract optimal parameters for the subtitle
   opt_params <- lapply(names(power_results_list), function(met_name) {
     res <- power_results_list[[met_name]]
     data.table(
@@ -2420,21 +2412,21 @@ plot_power_surface <- function(
   opt_params_dt <- rbindlist(opt_params)
   
   ###########
-  # 2- Limpieza de datos originales
+  # 2- Clean original data
   ###########
   
-  # Remover NA y valores no finitos
+  # Remove NAs and non-finite values
   surface_clean <- all_surfaces[is.finite(t_threshold) & is.finite(n_threshold) & is.finite(power)]
   
   ###########
-  # 3- Interpolación a grilla regular completa
+  # 3- Interpolate to a full regular grid
   ###########
   
-  # secuencias regulares con mismo rango para X e Y (para que sea cuadrado)
-  # Usar el rango más amplio de ambos ejes para mantener proporción
+  # Regular sequences with the same range for X and Y (to keep a square aspect)
+  # Use the wider range across both axes to maintain proportion
   common_range <- c(0, max(t_range[2], n_range[2]))
 
-  # Crear secuencias regulares para la grilla
+  # Create regular grid sequences
   t_seq <- seq(t_range[1], t_range[2], length.out = grid_size)
   n_seq <- seq(n_range[1], n_range[2], length.out = grid_size)
   
@@ -2469,10 +2461,10 @@ plot_power_surface <- function(
   surface_plot[, power := pmin(pmax(power, 0), 1)]
   
   ###########
-  # 5- Etiquetas de método
+  # 5- Method labels
   ###########
 
-  # subtítulo con info de cada método
+  # Subtitle with per-method info
   subtitulo <- paste(opt_params_dt[, sprintf("%s: t≥%.4f, N≥%.0f (%.1f%%)", method_label, t_star, n_star, achieved_power*100)], collapse = " | ")
 
   method_label_clean <- switch(detection,
@@ -2482,18 +2474,18 @@ plot_power_surface <- function(
   )
   
   ###########
-  # 6- Construcción del gráfico
+  # 6- Build the plot
   ###########
   
   p <- ggplot(surface_plot, aes(x = t_threshold, y = n_threshold, fill = power)) +
     
-    # geom_raster() para grillas regulares
-    geom_raster(interpolate = FALSE) +  # interpolate=TRUE suaviza visualmente
+    # geom_raster() for regular grids
+    geom_raster(interpolate = FALSE) +  # interpolate=TRUE smooths visually
 
-    # facetado
+    # Faceting
     facet_wrap(~ method_label, ncol = 2, scales = "fixed") +  
 
-    # Escala de color
+    # Color scale
     scale_fill_viridis_c(
       limits = c(0, 1),
       breaks = seq(0, 1, 0.2),
@@ -2504,7 +2496,7 @@ plot_power_surface <- function(
      guide = guide_colorbar(theme = theme( legend.text = element_text(angle = 45, hjust = 1, vjust = 1)))
     ) +
     
-    # Escalas de ejes
+    # Axis scales
     scale_x_continuous(
       limits = t_range,
       expand = c(0, 0),
@@ -2517,10 +2509,10 @@ plot_power_surface <- function(
       breaks = pretty_breaks(n = 6)
     ) +
 
-    # coordenadas cuadradas
+    # Square coordinate system
     coord_fixed(ratio = diff(t_range)/diff(n_range)) +
 
-    # Etiquetas
+    # Labels
     labs(
       title = sprintf("Superficie de Poder - %s", method_label_clean),
       subtitle = sprintf("Objetivo: %.0f%% | %s", target_power * 100, subtitulo),
@@ -2532,22 +2524,22 @@ plot_power_surface <- function(
 }
 
 ################################################################################
-# Función de cálculo de métricas por bootstrap
+# Bootstrap-based metrics calculation function
 ################################################################################
 
-# Calcula métricas de clasificación con IC95% por bootstrap
+# Computes classification metrics with 95% bootstrap confidence intervals
 # 
-# Parámetros:
-# dt data.table con columnas: triplet_id, detected, label
-# n_boot número de replicaciones bootstrap
-# aggregate_triplet si TRUE, agrega a nivel triplete con any(). si FALSE, mantiene granularidad actual (etapa o dinámica)
+# Parameters:
+# dt: data.table with columns: triplet_id, detected, label
+# n_boot: number of bootstrap replications
+# aggregate_triplet: if TRUE, aggregates to triplet level using any(); if FALSE, keeps current granularity (stage or dynamic)
 # 
-# Return: 
-# data.table con métricas e IC95%
+# Return:
+# data.table with metrics and 95% CIs
 
 calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score_type, score_type_auc) {
   
-  # Agregación a nivel triplete si se pide
+  # Aggregate to triplet level if requested
   if (aggregate_triplet) {
     dt_eval <- dt[, .(
       detected = any(detected, na.rm = TRUE),
@@ -2564,7 +2556,7 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
   n_total <- nrow(dt_eval)
   
   auc_result <- tryCatch({
-    # filtro valores NA e infinitos antes de calcular ROC  
+    # Filter NA and infinite values before computing ROC
     dt_roc <- dt_eval[is.finite(score_auc) & !is.na(score_auc) & !is.na(label)]
     
     if (nrow(dt_roc) < 2 || length(unique(dt_roc$label)) < 2) {
@@ -2579,12 +2571,12 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
     )
     auc <- as.numeric(pROC::auc(roc_data))
     
-    # Bootstrap para AUC
+    # Bootstrap for AUC
     b_auc <- replicate(n_boot, {
       b_idx <- sample(nrow(dt_roc), replace = TRUE)
       b_dt <- dt_roc[b_idx]
       
-      # chequeo que hay ambas clases en la muestra bootstrap
+      # Check that both classes are present in the bootstrap sample
       if (length(unique(b_dt$label)) < 2) {
         return(NA_real_)
       }
@@ -2610,7 +2602,7 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
   
   # Bootstrap
   if (aggregate_triplet) {
-    # Identificar IDs únicos para bootstrap por triplete
+    # Identify unique IDs for triplet-level bootstrap
     unique_pos_ids <- unique(dt_eval[label == 1, triplet_id])
     unique_neg_ids <- unique(dt_eval[label == 0, triplet_id])
   
@@ -2636,7 +2628,7 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
     })
 
   } else {
-    # Bootstrap por FILA para análisis por etapa
+    # Row-level bootstrap for stage-level analysis
     pos_idx <- which(dt_eval$label == 1)
     neg_idx <- which(dt_eval$label == 0)
 
@@ -2662,7 +2654,7 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
     })
   }
   
-  # Cálculo de métricas puntuales como media del bootstrap (así evito desalinear con IC)
+  # Point estimates as bootstrap means (to avoid misalignment with CIs)
   sens_boot <- boot_stats[1, ]
   spec_boot <- boot_stats[2, ]
   ppv_boot <- boot_stats[3, ]
@@ -2677,7 +2669,7 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
   acc <- mean(acc_boot, na.rm = TRUE)
   f1 <- mean(f1_boot, na.rm = TRUE)
   
-  # cálculo de IC
+  # CI calculation
   calc_ci <- function(valores_boot) {
     c(
       point = mean(valores_boot, na.rm = TRUE),
@@ -2693,7 +2685,7 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
   acc_ci <- calc_ci(acc_boot)
   f1_ci <- calc_ci(f1_boot)
   
-  # Conteos del dataset original (no bootstrap) para referencia
+  # Counts from the original (non-bootstrap) dataset for reference
   tp_orig <- sum(dt_eval$detected & dt_eval$label == 1)
   fn_orig <- sum(!dt_eval$detected & dt_eval$label == 1)
   fp_orig <- sum(dt_eval$detected & dt_eval$label == 0)
@@ -2715,19 +2707,19 @@ calculate_metrics <- function(dt, n_boot = 2000, aggregate_triplet = TRUE, score
 }
 
 ################################################################################
-# Función de expansión de datos con reducción
+# Data expansion function with reduction
 ################################################################################
 
-# Función que expande datos a formato largo
+# Expands data to long format
 #
-# Implementación:
-# Carga datos y crea objetos según nivel de reducción
-# Filtra inyecciones fallidas
-# Expande a formato largo
-# Filtra por etapas con alto reporte según dinamica
+# Implementation:
+# Loads data and creates objects according to the reduction level
+# Filters out failed injections
+# Expands to long format
+# Filters to stages with high reporting according to the dynamic
 
 expand <- function(red_pct) {
-  suffix_file <- if(red_pct == 0) "" else paste0("_", red_pct)  # objeto con nombre según nivel de reducción
+  suffix_file <- if(red_pct == 0) "" else paste0("_", red_pct)  # suffix based on reduction level
   
   ruta_pos <- paste0(ruta_base_sensitivity, "positive_triplets_results", suffix_file, ".rds")
   ruta_neg <- paste0(ruta_base_sensitivity, "negative_triplets_results", suffix_file, ".rds")
@@ -2735,22 +2727,22 @@ expand <- function(red_pct) {
   pos_raw <- readRDS(ruta_pos)
   neg_raw <- readRDS(ruta_neg)
   
-  # solo inyecciones exitosas
+  # Successful injections only
   pos_valid <- pos_raw[injection_success == TRUE]
   
-  # expando a formato largo
+  # Expand to long format
   pos_exp <- expand_clean_all_metrics(pos_valid, 1, null_thresholds, use_threshold_ior, use_threshold_reri)
   neg_exp <- expand_clean_all_metrics(neg_raw, 0, null_thresholds, use_threshold_ior, use_threshold_reri)
   
-  # Merge con clasificación de etapas
+  # Merge with stage classification
   pos_exp <- merge(pos_exp, stage_class, by = c("nichd", "dynamic"), all.x = TRUE)
   neg_exp[, class := 0]
   
-  # Merge con datos de coadministración
+  # Merge with co-administration data
   pos_exp <- merge(pos_exp, coadmin_stage_pos[, .(triplet_id, stage_num, n_coadmin_stage)], by = c("triplet_id", "stage_num"), all.x = TRUE)
   neg_exp <- merge(neg_exp, coadmin_stage_neg[, .(triplet_id, stage_num, n_coadmin_stage)], by = c("triplet_id", "stage_num"), all.x = TRUE)
   
-  # Dataset de alto reporte (excluir uniform)
+  # High-reporting dataset (excluding uniform dynamic)
   pos_high <- pos_exp[class == 1]
   neg_high <- neg_exp[class == 0]
   
@@ -2763,28 +2755,28 @@ expand <- function(red_pct) {
 }
 
 ################################################################################
-# Función de detección de señal
+# Signal detection function
 ################################################################################
 
-# Detecta señales según método
+# Detects signals according to the specified method
 #
-# Parámetros:
-# data:resultados expandidos de tripletes (formato largo)
-# thresholds: umbrales por etapa 
-# method: método de detección ("gam" o "classic")
-# criterion: criterio de detección ("ior", "reri", o "double")
-# use_null: si TRUE, aplica umbrales de la distribución nula
+# Parameters:
+# data: expanded triplet results (long format)
+# thresholds: per-stage thresholds
+# method: detection method ("gam" or "classic")
+# criterion: detection criterion ("ior", "reri", or "double")
+# use_null: if TRUE, applies null distribution thresholds
 #
 
 detect_signal <- function(dt, method_name, detection_type, use_null) {
   
-  is_gam <- grepl("GAM", method_name) # busca GAM en el string del método
+  is_gam <- grepl("GAM", method_name) # checks for "GAM" in the method string
   
-  # Determinar columnas según método
+  # Determine columns based on the method
   if (is_gam) {
     ior_col <- "gam_log_ior_lower90"
     reri_col <- "gam_reri_lower90"
-    thresh_ior_col <- "threshold_ior"   # umbrales de distribución nula
+    thresh_ior_col <- "threshold_ior"  # null distribution thresholds
     thresh_reri_col <- "threshold_reri"
   } else {
     ior_col <- "classic_log_ior_lower90"
@@ -2793,9 +2785,9 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
     thresh_reri_col <- NULL
   }
   
-  # Calcular detección según tipo
+  # Compute detection flags by criterion type
   if (detection_type == "IOR") {
-    if (is_gam && use_null) {   # detección para gam con umbral de distribución nula
+    if (is_gam && use_null) {   # GAM detection with null distribution threshold
       dt[, detected := !is.na(get(ior_col)) & get(ior_col) > 0 & get(ior_col) > get(thresh_ior_col)]
     } else { dt[, detected := !is.na(get(ior_col)) & get(ior_col) > 0]}
   } else if (detection_type == "RERI") {
@@ -2803,12 +2795,12 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
     } else {dt[, detected := !is.na(get(reri_col)) & get(reri_col) > 0]}
   } else { # Doble
     if (is_gam && use_null) {
-      dt[, detected := (!is.na(get(ior_col)) & get(ior_col) > 0 & get(ior_col) > get(thresh_ior_col)) | # ambos criterios
+      dt[, detected := (!is.na(get(ior_col)) & get(ior_col) > 0 & get(ior_col) > get(thresh_ior_col)) | # both criteria
                        (!is.na(get(reri_col)) & get(reri_col) > 0 & get(reri_col) > get(thresh_reri_col))]
     } else { dt[, detected := (!is.na(get(ior_col)) & get(ior_col) > 0) | (!is.na(get(reri_col)) & get(reri_col) > 0)]}
   }
   
-  # Reemplazar NA por FALSE (osea, no detectado)
+  # Replace NA with FALSE (i.e., not detected)
   dt[is.na(detected), detected := FALSE]
   
   return(dt)
