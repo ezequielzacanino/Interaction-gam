@@ -4,29 +4,7 @@
 
 ## Description
 
-This repository implements a methodological validation workflow to detect drug-drug interaction (DDI) signals with ontogenic dynamics in pediatric populations using generalized additive models (GAMs) on spontaneous reporting systems.
-
-The pipeline follows the logic of the accompanying manuscript:
-
-- generates semi-synthetic datasets from curated pediatric FAERS data;
-- compares a GAM-based approach against classic stratified methods based on `IOR` and `RERI`;
-- builds an empirical null distribution through permutation;
-- evaluates sensitivity, specificity, AUC, F1, and related metrics under progressive data scarcity;
-- analyzes biological plausibility through drug-gene networks;
-- compares detected signals against `TWOSIDES`.
-
-The unit of analysis is the **triplet** `drugA - drugB - event`, defined from reports with coadministration and a reported adverse event.
-
-## Analytical Objective
-
-The goal is to evaluate whether a GAM can detect nonlinear disproportionality patterns across the 7 NICHD pediatric development stages better than stratified methods.
-
-In the current implementation:
-
-- positive controls are constructed through semi-synthetic injection of ontogenic dynamics;
-- negative controls are selected from alternative combinations of the same drugs and events;
-- final GAM classification uses a double criterion: a positive nominal signal and exceeding a threshold derived from the null distribution;
-- methodological comparison is performed on both the multiplicative scale (`log(IOR)`) and the additive scale (`RERI`).
+This repository contains the scripts used for the validation of a Generalized Additive Model (GAM) for the detection of Drug-Drug Interaction (DDI) signals with ontogenetic dynamics within spontaneous adverse event reporting systems in the pediatric population
 
 ## Key Concepts
 
