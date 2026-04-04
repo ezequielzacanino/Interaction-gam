@@ -13,7 +13,7 @@ source("00_functions.R", local = TRUE)
 perm_events <- TRUE   
 perm_drugs <- TRUE   
 
-# Parámetros para muestreo
+# Sampling parameters
 max_triplets_per_permutation <- 150  
 min_reports_triplet <- 2
 target_total_triplets <- 10000       # Target number of triplets
@@ -275,11 +275,12 @@ for (batch in 1:n_batches) {
           k_spline = k_spline
         )
       }, error = function(e) list(success = FALSE))
-  
+
+      # Quality control: exclude numerically unstable estimates from null distribution
       if (!model_res$success) next    
       if (any(is.na(model_res$log_ior)) || 
         any(is.infinite(model_res$log_ior)) ||
-        any(abs(model_res$log_ior) > 20) ||
+        #any(abs(model_res$log_ior) > 20) ||
         any(is.na(model_res$reri_lower90)) ||
         any(is.infinite(model_res$reri_lower90))) next
       

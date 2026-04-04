@@ -25,7 +25,7 @@ niveles_nichd <- c(
 )
 
 # Number of cores for parallelization (0.80 crashes with 16GB RAM)
-n_cores <- max(1, floor(detectCores() * 0.75)) 
+n_cores <- max(1, floor(detectCores() * 0.80)) 
 
 # General file paths
 ruta_ade_raw <- "./ade_raw.csv"

@@ -1,28 +1,28 @@
 ################################################################################
-# Script de análisis de métricas y sensibilidad 
+# Metrics and sensitivity analysis script
 # Script: 30_metrics.R
 ################################################################################
 
 source("00_functions.R", local = TRUE)
 
 ################################################################################
-# Configuración
+# Configuration
 ################################################################################
 
 n_boot <- 2000
 
-# parámetros para calculo de subset de poder
+# Parameters for power subset calculation
 target_power <- 0.80
 grid_res <- 30
 tij_max <- 0.25  
 n_max <- 250
 
-# parámetros para uso de distribución nula 
-# (esto queda redundante para métricas globales sin reducción, pero queda por si se quiere hacer análisis nominal entero)
+# Parameters for null distribution usage
+# (redundant for global metrics without reduction, kept in case a full nominal analysis is needed)
 use_threshold_ior <- TRUE
 use_threshold_reri <- TRUE
 
-# clasificación de etapas con alto reporte según dinámica
+# Classification of high-reporting stages by dynamic pattern
 stage_class <- rbind(
   data.table(nichd = niveles_nichd, dynamic = "uniform", class = 1),
   data.table(nichd = niveles_nichd, dynamic = "increase", class = c(0, 0, NA, NA, NA, 1, 1)),
@@ -31,7 +31,7 @@ stage_class <- rbind(
   data.table(nichd = niveles_nichd, dynamic = "inverse_plateau", class = c(1, NA, 0, 0, 0, NA, 1))
 )
 
-# rutas
+# Paths
 ruta_base_sensitivity <- paste0("./results/", suffix, "/augmentation_results/")
 output_dir <- paste0("./results/", suffix, "/metrics_results/")
 
@@ -40,14 +40,14 @@ ruta_coadmin_neg <- paste0("./results/", suffix, "/augmentation_results/negative
 
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-# niveles de reducción
+# Reduction levels
 reduction_levels <- c(0, seq(10, 90, by = 10))
 
 ################################################################################
-# Etiquetas para gráficos
+# Plot labels
 ################################################################################
 
-# etiquetas para traducción 
+# Labels for plot display
 dynamic_labels <- c(
   "uniform" = "Uniforme",
   "increase" = "Incremento",
@@ -81,7 +81,7 @@ method_pairs <- list(
 )
 
 ################################################################################
-# Carga de umbrales nulos
+# Loading null thresholds
 ################################################################################
 
 ruta_null_dist <- paste0("./results/", suffix, "/null_distribution_results/null_distribution.csv")
@@ -95,27 +95,27 @@ null_thresholds_reri <- null_thresholds_reri[, .(stage, threshold_reri = get(thr
 
 null_thresholds <- merge(null_thresholds_ior, null_thresholds_reri, by = "stage")
 
-# datos de coadministración
+# Co-administration data
 coadmin_stage_pos <- fread(ruta_coadmin_pos)
 coadmin_stage_neg <- fread(ruta_coadmin_neg)
 setnames(coadmin_stage_pos, "nichd_num", "stage_num")
 setnames(coadmin_stage_neg, "nichd_num", "stage_num")
 
 ################################################################################
-# Carga de datos sin reducción 
+# Loading baseline data (no reduction)
 ################################################################################
 
-data_baseline <- expand(0)  # carga datos sin reducción para cálculos de umbrales de poder
+data_baseline <- expand(0)  # load unreduced data for power threshold calculations
 pos_high_base <- data_baseline$pos_high
 neg_high_base <- data_baseline$neg_high
 
 ################################################################################
-# Gráficos de comparación de distribuciones
+# Distribution comparison plots
 ################################################################################
 
 null_distribution <- fread(ruta_null_dist)
 
-# sampleo distribución nula para graficar
+# sample null distribution for plotting
 null_sample <- null_distribution[sample(.N, min(.N, 50000))]
 
 comparison_data <- rbind(
@@ -123,49 +123,49 @@ comparison_data <- rbind(
   pos_high_base[, .(stage_num, log_ior_lower90 = gam_log_ior_lower90, reri_lower90 = gam_reri_lower90, source = "Positivos")],
   neg_high_base[, .(stage_num, log_ior_lower90 = gam_log_ior_lower90, reri_lower90 = gam_reri_lower90, source = "Negativos")]
 )
-comparison_data[, stage_name := factor(stage_num, levels = 1:7, labels = nichd_labels)] # ordeno para las facetas
+comparison_data[, stage_name := factor(stage_num, levels = 1:7, labels = nichd_labels)] # ordered for facet display
 
-# corto data para mostrar en gráfico (esto lo debería hacer limitando ejes en el gráfico igual)
+# trim data for plotting (could alternatively be handled via axis limits in the plot)
 comparison_data <- comparison_data[ is.finite(log_ior_lower90)]
 comparison_data <- comparison_data[ is.finite(reri_lower90)]
 
-# Paleta de colores consistente
+# Consistent color palette
 color_palette <- c(
   "Distribución nula" = "gray60",
   "Positivos" = "#4DAF4A",
   "Negativos" = "#E41A1C"
 )
 
-# Gráfico combinado con facets
+# Combined faceted plot
 p_null_vs_obs_ior <- ggplot( comparison_data, aes(x = log_ior_lower90, fill = source)) +
   geom_density(alpha = 0.5, adjust = 1.5) +
   facet_wrap(~ stage_name, scales = "free_y", ncol = 4) +
   scale_fill_manual(values = color_palette) +
-  scale_x_continuous(limits = c(-5, 5)) + # limito para visualizar mejor las distribuciones
+  scale_x_continuous(limits = c(-5, 5)) + # clipped to improve distribution visibility
   labs(
     title = sprintf("Distribución nula vs señales detectadas (%s)", percentil),
     x = "Log(IOR) - Límite inferior IC 90%",
     y = "Densidad",
     fill = "Fuente")
-  # Guardar gráfico combinado
+  # Save combined plot
   ggsave(paste0(output_dir, "fig_null_vs_observed_ior.png"), p_null_vs_obs_ior, width = 16, height = 12, dpi = 300
 )
 
 print(p_null_vs_obs_ior)
 
-# Gráfico combinado con facets
+# Combined faceted plot
 p_null_vs_obs_reri <- ggplot( comparison_data, aes(x = reri_lower90, fill = source)) +
   geom_density(alpha = 0.5, adjust = 1.5) +
   facet_wrap(~ stage_name, scales = "free_y", ncol = 4) +
   scale_fill_manual(values = color_palette) +
-  scale_x_continuous(limits = c(-10, 10)) + # limito para visualizar mejor las distribuciones
+  scale_x_continuous(limits = c(-10, 10)) +  # clipped to improve distribution visibility
   labs(
     title = sprintf("Distribución nula vs señales detectadas (%s)", percentil),
     x = "RERI - Límite inferior IC 90%",
     y = "Densidad",
     fill = "Fuente"
   ) 
-# Guardar gráfico combinado
+# Save combined plot
 ggsave( paste0(output_dir, "fig_null_vs_observed_reri.png"), p_null_vs_obs_reri, width = 16, height = 12, dpi = 300)
 
 print(p_null_vs_obs_reri)
@@ -173,7 +173,7 @@ print(p_null_vs_obs_reri)
 message(sprintf("Dataset base: %d positivos, %d negativos", nrow(pos_high_base), nrow(neg_high_base)))
 
 ################################################################################
-# Cálculo de subsets de poder para cada método
+# Power subset calculation for each method
 ################################################################################
 
 # GAM-logIOR
@@ -202,7 +202,7 @@ power_gam_reri <- calculate_power_gam(
   detection = "reri"
 )
 
-# Estratificado-IOR
+# Stratified-IOR
 message("Estratificado-IOR")
 power_cls_ior <- calculate_power_classic(
   data_pos = pos_high_base,
@@ -214,7 +214,7 @@ power_cls_ior <- calculate_power_classic(
   na_remove = TRUE
 )
 
-# Estratificado-RERI
+# Stratified-RERI
 message("Estratificado-RERI")
 power_cls_reri <- calculate_power_classic(
   data_pos = pos_high_base,
@@ -274,7 +274,7 @@ ggsave(
 
 print(p_surface_reri)
 
-# Guardo IDs de tripletes para cada subset de poder
+# Store triplet IDs for each power subset
 power_ids <- list(
   "GAM-logIOR" = unique(power_gam_ior$superset_pos[class == 1]$triplet_id),
   "GAM-RERI" = unique(power_gam_reri$superset_pos[class == 1]$triplet_id),
@@ -282,14 +282,14 @@ power_ids <- list(
   "Estratificado-RERI" = unique(power_cls_reri$superset_pos[class == 1]$triplet_id)
 )
 
-# subsets de intersección
+# Intersection subsets - triplets that meet the power threshold for both methods in a pair
 triplets_intersection_reri <- intersect(power_ids[["GAM-RERI"]], power_ids[["Estratificado-RERI"]])
 message(sprintf("\nIntersección GAM-RERI & Estratificado-RERI: %d tripletes", length(triplets_intersection_reri)))
 
 triplets_intersection_ior <- intersect(power_ids[["GAM-logIOR"]], power_ids[["Estratificado-IOR"]])
 message(sprintf("\nIntersección GAM-logIOR & Estratificado-IOR: %d tripletes", length(triplets_intersection_ior)))
 
-# Resumen de subsets
+# Power subset summary
 summary_power <- data.table(
   method = names(power_ids),
   n_triplets = sapply(power_ids, length),
@@ -301,20 +301,20 @@ summary_power <- data.table(
 print(summary_power)
 
 ################################################################################
-# Datos con reducción 
+# Data with downsampling
 ################################################################################
 
-# expando datos según niveles de reducción
+# Pre-load all reduction levels into memory at once
 datos_por_reduccion <- lapply(reduction_levels, expand)
 names(datos_por_reduccion) <- as.character(reduction_levels)
 
 ################################################################################
-# Exclusión de tripletes no detectables por inexistencia tras reducción
+# Exclusion of triplets that become undetectable after downsampling
 ################################################################################
 
-# Un triplete con N = 0 reportes A-B-Evento en el dataset reducido ya no existe:
-# que sea clasificado como negativo no es mérito del método, sino trivialidad.
-# Incluirlos infla artificialmente especificidad y VPN en los niveles de reducción altos.
+# A triplet with N = 0 A-B-Event reports in the reduced dataset no longer exists:
+# classifying it as negative reflects trivial absence, not method performance.
+# Including such triplets artificially inflates specificity and NPV at high reduction levels.
 
 exclude_downsampled <- TRUE   
 
@@ -326,10 +326,10 @@ if (exclude_downsampled) {
     n_neg_antes <- uniqueN(datos$neg_high$triplet_id)
     n_pos_antes <- uniqueN(datos$pos_high$triplet_id)
     
-    # Negativos: excluir si el triplete no tiene ningún reporte A-B-Evento
-    datos$neg_high <- datos$neg_high[N > 0]
-    # Positivos: misma lógica (con inyección exitosa suelen tener N > 0, pero por consistencia)
-    datos$pos_high <- datos$pos_high[N > 0]
+    # Negatives: exclude triplets with no A-B-Event reports
+    datos$neg_high <- datos$neg_high[N > 1]
+    # Positives: same logic (injected signals typically have N > 0, but kept for consistency)
+    datos$pos_high <- datos$pos_high[N > 1]
     
     n_neg_excluidos <- n_neg_antes - uniqueN(datos$neg_high$triplet_id)
     n_pos_excluidos <- n_pos_antes - uniqueN(datos$pos_high$triplet_id)
@@ -344,10 +344,10 @@ if (exclude_downsampled) {
 }
 
 ################################################################################
-# Definición de métodos 
+# Method definitions
 ################################################################################
 
-# métodos con tipo de score mapeado 
+# Methods with their mapped score types and detection settings
 metodos <- list(
   list(nombre = "GAM-logIOR", tipo = "IOR", null = TRUE, 
        score_type = "gam_log_ior_lower90", score_type_auc = "gam_log_ior"),
@@ -364,46 +364,46 @@ metodos <- list(
 ) 
 
 ################################################################################
-# Cálculo de métricas
+# Metrics calculation
 ################################################################################
 
-# Métricas originales sin reducción
+# Original metrics (no power-based filtering applied to positive triplets)
 res_global_original <- list()
 res_dinamica_original <- list()
 res_etapa_original <- list()
 
 for (red_pct in reduction_levels) {
   
-  message(sprintf("\nReducción %d%%", red_pct)) # trackeo de niveles de reducción
+  message(sprintf("\nReducción %d%%", red_pct)) # reduction level tracking
   datos <- datos_por_reduccion[[as.character(red_pct)]]
   
   for (met in metodos) {
     
     message(sprintf("  %s", met$nombre))
     
-    # Métricas globales
-    # Filtrar negativos solo a etapas de alto reporte
+    # Global metrics
+    # Filter negatives to high-reporting stages only
     etapas_alto_reporte <- stage_class[class == 1, unique(nichd)]
     neg_global <- datos$neg_high[nichd %in% etapas_alto_reporte]
 
     dt_global <- rbind(datos$pos_high, neg_global, fill = TRUE)
     dt_global <- detect_signal(dt_global, met$nombre, met$tipo, use_null = met$null)
     
-    # agrego a nivel triplete para métricas globales
-    metrics_global <- calculate_metrics(dt_global, n_boot, aggregate_triplet = TRUE,  # acá TRUE para evitar doble conteo
+    # aggregate at triplet level for global metrics
+    metrics_global <- calculate_metrics(dt_global, n_boot, aggregate_triplet = TRUE,  # TRUE here to avoid double-counting across stages
       score_type = met$score_type, score_type_auc = met$score_type_auc)
       metrics_global[, `:=`( method = met$nombre, reduction_pct = red_pct, dataset = "original")]
       res_global_original[[length(res_global_original) + 1]] <- metrics_global
     
-    # Métricas por dinámica
-    dinamicas <- setdiff(unique(datos$pos_high$dynamic), "uniform") # remuevo uniform (creo que redundante)
+    # Metrics by dynamic pattern
+    dinamicas <- setdiff(unique(datos$pos_high$dynamic), "uniform") # remove uniform (redundant)
      
     for (dyn in dinamicas) {
-      # Etapas altas para esta dinámica
+      # High-reporting stages for this dynamic pattern
       etapas_altas <- stage_class[dynamic == dyn & class == 1, nichd] 
       pos_dyn <- datos$pos_high[nichd %in% etapas_altas & dynamic == dyn]
   
-      # Negativos en las MISMAS etapas altas
+      # Negatives restricted to the same high-reporting stages
       neg_dyn <- datos$neg_high[nichd %in% etapas_altas]
   
       dt_dyn <- rbind(pos_dyn, neg_dyn, fill = TRUE)
@@ -420,20 +420,20 @@ for (red_pct in reduction_levels) {
       res_dinamica_original[[length(res_dinamica_original) + 1]] <- metrics_dyn
     }
     
-    # Métricas por etapa (no agrega por triplete, evalua por etapa)
+    # Per-stage metrics (no triplet aggregation — evaluated stage-by-stage)
     for (s in 1:7) {
       nichd_label <- niveles_nichd[s]
       
-      # Para positivos: solo etapas clasificadas como altas (redundante)
+      # Positives: only stages classified as high-reporting (redundant filter for consistency)
       pos_stage <- datos$pos_high[stage_num == s & class == 1]
       
-      # Negativos de la misma etapa
+      # Negatives from the same stage
       neg_stage <- datos$neg_high[stage_num == s]
       
       dt_stage <- rbind(pos_stage, neg_stage, fill = TRUE)
       dt_stage <- detect_signal(dt_stage, met$nombre, met$tipo, use_null = met$null)
       
-      # no agrega - cada fila es una etapa específica
+      # no aggregation - each row corresponds to a specific stage
       metrics_stage <- calculate_metrics(dt_stage, n_boot, aggregate_triplet = FALSE, 
         score_type = met$score_type, score_type_auc = met$score_type_auc)
         metrics_stage[, `:=`(method = met$nombre, reduction_pct = red_pct, stage_num = s, nichd = nichd_label, dataset = "original")]
@@ -451,7 +451,7 @@ fwrite(metrics_dynamic_original, paste0(output_dir, "metrics_dynamic_original.cs
 fwrite(metrics_stage_original, paste0(output_dir, "metrics_stage_original.csv"))
 
 ################################################################################
-# Cálculo de métricas en subset de poder estadístico
+# Metrics calculation on the statistical power subset
 ################################################################################
 
 res_global_filtered <- list()
@@ -460,16 +460,16 @@ res_etapa_filtered <- list()
 
 for (red_pct in reduction_levels) {
   
-  message(sprintf("\nReducción %d%%", red_pct)) # trackeo
+  message(sprintf("\nReducción %d%%", red_pct)) # progress tracking
   datos <- datos_por_reduccion[[as.character(red_pct)]]
   
   for (met in metodos) {
-    # trackeo
+    # progress tracking
     message(sprintf("  %s", met$nombre))
     
     ids_filtrar <- power_ids[[met$nombre]]
     
-    # Métricas globales filtradas
+    # Filtered global metrics
     etapas_alto_reporte <- stage_class[class == 1, unique(nichd)]
     neg_global <- datos$neg_high[nichd %in% etapas_alto_reporte]
 
@@ -482,8 +482,8 @@ for (red_pct in reduction_levels) {
       metrics_global[, `:=`( method = met$nombre, reduction_pct = red_pct, dataset = "filtered")]
       res_global_filtered[[length(res_global_filtered) + 1]] <- metrics_global
     
-    # Métricas por dinámica filtradas
-    dinamicas <- setdiff(unique(datos$pos_high$dynamic), "uniform") # (redundante)
+    # Filtered metrics by dynamic pattern
+    dinamicas <- setdiff(unique(datos$pos_high$dynamic), "uniform") # (redundant)
     
     for (dyn in dinamicas) {
       etapas_altas <- stage_class[dynamic == dyn & class == 1, nichd]
@@ -499,7 +499,7 @@ for (red_pct in reduction_levels) {
         res_dinamica_filtered[[length(res_dinamica_filtered) + 1]] <- metrics_dyn
     }
     
-    # Métricas por etapa filtradas
+    # Filtered per-stage metrics
     for (s in 1:7) {
       nichd_label <- niveles_nichd[s]
       pos_stage <- datos$pos_high[triplet_id %in% ids_filtrar & stage_num == s & class == 1]
@@ -532,7 +532,7 @@ fwrite(metrics_dynamic_filtered, paste0(output_dir, "metrics_dynamic_filtered.cs
 fwrite(metrics_stage_filtered, paste0(output_dir, "metrics_stage_filtered.csv"))
 
 ################################################################################
-# Cálculo de métricas en subset de intersección
+# Metrics calculation on the intersection subset
 ################################################################################
 
 pares_interseccion <- list(
@@ -560,9 +560,9 @@ for (red_pct in reduction_levels) {
     for (met in par$metodos) {
       message(sprintf("%s [intersección %s]", met$nombre, par$label))
       
-      pos_int <- datos$pos_high[triplet_id %in% par$triplets]  # usa la intersección del par
+      pos_int <- datos$pos_high[triplet_id %in% par$triplets]   # use the pair-specific intersection triplet set
       
-      # Métricas globales
+      # Global metrics
       etapas_alto_reporte <- stage_class[class == 1, unique(nichd)]
       neg_global <- datos$neg_high[nichd %in% etapas_alto_reporte]
       dt_global <- rbind(pos_int, neg_global, fill = TRUE)
@@ -572,7 +572,7 @@ for (red_pct in reduction_levels) {
       metrics_global[, `:=`(method = met$nombre, reduction_pct = red_pct, dataset = "intersection")]
       res_global_inter[[length(res_global_inter) + 1]] <- metrics_global
       
-      # Métricas por dinámica
+      # Metrics by dynamic pattern
       dinamicas <- setdiff(unique(datos$pos_high$dynamic), "uniform")
       for (dyn in dinamicas) {
         etapas_altas <- stage_class[dynamic == dyn & class == 1, nichd]
@@ -587,7 +587,7 @@ for (red_pct in reduction_levels) {
         res_dinamica_inter[[length(res_dinamica_inter) + 1]] <- metrics_dyn
       }
       
-      # Métricas por etapa
+      # Per-stage metrics
       for (s in 1:7) {
         nichd_label <- niveles_nichd[s]
         pos_stage <- pos_int[stage_num == s & class == 1]

@@ -399,6 +399,7 @@ message("\nPositivos exitosos (base): ", sum(positives_scores$model_success & po
 # Negative triplet selection
 ################################################################################
 
+# Build negative pool from same drugs and events that positive pool
 drugs_from_pos <- unique(c(pos_meta$drugA, pos_meta$drugB))
 events_from_pos <- unique(pos_meta$meddra)
 
@@ -406,6 +407,8 @@ events_from_pos <- unique(pos_meta$meddra)
 message(sprintf("Pool de drogas: %d", length(drugs_from_pos)))
 message(sprintf("Pool de eventos: %d", length(events_from_pos)))
 
+# Build a lookup set of positive triplet identifiers to exclude from the
+# negative pool — prevents contamination between the two sets
 pos_triplet_ids <- paste(
   pmin(pos_meta$drugA, pos_meta$drugB),
   pmax(pos_meta$drugA, pos_meta$drugB),
@@ -414,6 +417,8 @@ pos_triplet_ids <- paste(
 )
 pos_triplet_set <- unique(pos_triplet_ids)
 
+# Generate all possible drug-pair x event combinations using chunked CJ to
+# avoid a single massive cross-join that would exhaust available memory
 chunk_size <- 50
 n_drugs <- length(drugs_from_pos)
 n_chunks <- ceiling(n_drugs / chunk_size)
@@ -427,12 +432,13 @@ for (chunk_idx in 1:n_chunks) {
   
   drugs_chunk <- drugs_from_pos[start_idx:end_idx]
   
+  # Cross-join a drug chunk against the full drug and event pools
   chunk_combinations <- CJ(
     drugA = drugs_chunk,
     drugB = drugs_from_pos,
     meddra = events_from_pos
   )
-  
+  # Enforce canonical ordering (drugA < drugB) to eliminate mirror-image duplicates
   chunk_combinations[, `:=`(
     drugA_ord = pmin(drugA, drugB),
     drugB_ord = pmax(drugA, drugB)
@@ -446,11 +452,12 @@ for (chunk_idx in 1:n_chunks) {
     drugA_ord = NULL,
     drugB_ord = NULL
   )]
+
+  # Remove self-pairs and any triplet already used as a positive
   chunk_combinations <- chunk_combinations[drugA != drugB]
-  
   chunk_combinations[, triplet_id := paste(drugA, drugB, meddra, sep = "_")]
   chunk_combinations <- chunk_combinations[!triplet_id %in% pos_triplet_set]
-
+  # Keep only triplets that appear in the observed data with enough reports
   chunk_candidates <- merge(
     chunk_combinations[, .(drugA, drugB, meddra, triplet_id)],
     trip_summary,
@@ -477,6 +484,8 @@ gc()
 
 candidatos_neg <- unique(candidatos_neg, by = "triplet_id")
 
+# Count observed reports per NICHD stage for each negative candidate to apply
+# the minimum-stages filter, mirroring the filter used for positive candidates
 neg_ids <- paste(candidatos_neg$drugA, candidatos_neg$drugB, candidatos_neg$meddra, sep = "_")
 
 neg_counts_by_stage <- unique(
@@ -506,12 +515,13 @@ candidatos_neg_full <- merge(
   by = c("drugA", "drugB", "meddra"),
   all.x = TRUE
 )
-
+# Apply the same minimum-stages criterion used for positive candidates
 candidatos_neg_filtered <- candidatos_neg_full[n_stages_with_data >= min_nichd_with_rep]
 
 # Summary of filtered negative candidates
 message(sprintf("\nCandidatos negativos filtrados: %d (de %d)", nrow(candidatos_neg_filtered), nrow(candidatos_neg)))
 
+# Random sample from the filtered pool up to the configured n_neg ceiling
 n_neg_final <- min(n_neg, nrow(candidatos_neg_filtered))
 selected_negatives <- candidatos_neg_filtered[sample(.N, n_neg_final)]
 
@@ -522,6 +532,12 @@ message(sprintf("\nNegativos seleccionados: %d", nrow(selected_negatives)))
 message(sprintf("  Reportes promedio: %.1f", mean(selected_negatives$N)))
 message(sprintf("  Etapas promedio: %.1f", mean(selected_negatives$n_stages_with_data)))
 
+################################################################################
+# Co-administration counts by NICHD stage for negative triplets
+################################################################################
+
+# Computes how many co-administration reports exist per NICHD stage for each
+# selected negative triplet; saved for use in downstream analysis
 coadmin_stage_neg_list <- lapply(1:nrow(selected_negatives), function(i) {
   row <- selected_negatives[i]
   result <- coadmin_by_stage(
@@ -556,222 +572,78 @@ reduced_datasets <- setNames(
 )
 
 ################################################################################
-# Batch processing of negative triplets with sensitivity analysis
+# Batch processing of negative triplets
 ################################################################################
 
-cl <- makeCluster(n_cores)  
-registerDoParallel(cl)
-  
-clusterExport(cl, c("fit_gam", "ade_raw_dt", "z90",
-"selected_negatives", "normalize_triplet_result", 
-"spline_individuales", "include_sex",
-"include_stage_sex", "k_spline", "nichd_spline", "include_nichd",
-"bs_type", "select", "method",
-"calculate_classic_ior", "calculate_classic_reri",
-"reduce_dataset_by_stage",
-"reduction_levels", "calc_basic_counts", "reduced_datasets"), 
-envir = environment())
-clusterEvalQ(cl, {
-  library(data.table)
-  library(mgcv)
-  library(MASS)
-  library(doRNG)
-})
-
 batch_size_neg <- 50
-n_batches <- ceiling(nrow(selected_negatives) / batch_size_neg)
+n_batches      <- ceiling(nrow(selected_negatives) / batch_size_neg)
 
-existing_cp_neg <- list.files(
-  output_dir,
-  pattern = "checkpoint_negatives_batch_\\d+\\.rds",
-  full.names = TRUE
-)
+# Helper: detect existing checkpoints and return the batch to start from 
+detect_neg_checkpoints <- function(out_dir, pass_tag) {
+  pattern  <- sprintf("checkpoint_neg_%s_batch_\\d+\\.rds", pass_tag)
+  cp_files <- list.files(out_dir, pattern = pattern, full.names = TRUE)
 
-if (length(existing_cp_neg) > 0) {
-  cp_batches_neg <- sort(as.integer(
-    gsub(".*checkpoint_negatives_batch_(\\d+)\\.rds", "\\1", existing_cp_neg)
+  if (length(cp_files) == 0) return(1L)
+
+  cp_nums <- sort(as.integer(
+    gsub(sprintf(".*checkpoint_neg_%s_batch_(\\d+)\\.rds", pass_tag), "\\1", cp_files)
   ))
-  last_cp_neg <- max(cp_batches_neg)
-  redo_batch_neg <- last_cp_neg           # rerun the last batch in case it was corrupted
-  load_batches_neg <- cp_batches_neg[cp_batches_neg < redo_batch_neg]
-  
-  if (length(load_batches_neg) > 0) {
-    negatives_scores_list <- setNames(
-      lapply(load_batches_neg, function(b)
-        readRDS(paste0(output_dir, "checkpoint_negatives_batch_", b, ".rds"))
-      ),
-      as.character(load_batches_neg)
-    )
-  } else {
-    negatives_scores_list <- list()
-  }
-  start_batch_neg <- redo_batch_neg
-} else {
-  negatives_scores_list <- list()
-  start_batch_neg <- 1
+  last_cp <- max(cp_nums)
+  message(sprintf("  [%s] Checkpoint found — resuming from batch %d", pass_tag, last_cp))
+  return(last_cp)
 }
 
-for (batch in start_batch_neg:n_batches) {
-  start_idx <- (batch - 1) * batch_size_neg + 1
-  end_idx <- min(batch * batch_size_neg, nrow(selected_negatives))
-  batch_indices <- start_idx:end_idx
-  
-  message("\nLote ", batch, " / ", n_batches, 
-          " (tripletes ", start_idx, "-", end_idx, ")")
-  
-  batch_results <- foreach(
-    idx = batch_indices,
-    .packages = c("data.table", "mgcv"),
-    .errorhandling = "pass",
-    .verbose = FALSE,
-    .options.RNG = 7113
-  ) %dorng% {
+# Helper: run all batches for a single reduction-level pass 
+# pass_tag : string used in checkpoint filenames ("base", "red10", "red20", ...)
+# ade_pass : the dataset to use for this pass (full or reduced)
+# red_pct  : numeric value stored in the reduction_pct output column
+#
+# The parallel backend must be registered (registerDoParallel) before calling
+# this function. GAM parameters are read from the enclosing environment via
+# lexical scoping (spline_individuales, k_spline, etc.).
 
-    set.seed(7113 + idx)
-    
-    rowt <- selected_negatives[idx]
-    rowt$type <- "negative"
-    
-    counts_neg <- tryCatch({
-      calc_basic_counts(ade_raw_dt, rowt$drugA, rowt$drugB, rowt$meddra)
-    }, error = function(e) list(n_events_coadmin = NA, n_events_total = NA, n_coadmin = NA))
-    
-    # Downsampling loop for negative triplets
-    all_results <- list()
-    
-    # Base result (0% reduction) — fit on the full original dataset
-    base_result <- tryCatch({
-      
-      # Fit GAM on the original dataset
-      model_res <- fit_gam(
-        drugA_id = rowt$drugA,
-        drugB_id = rowt$drugB,
-        event_id = rowt$meddra,
-        ade_data = ade_raw_dt,
-        spline_individuales = spline_individuales,
-        include_sex = include_sex,
-        include_stage_sex = include_stage_sex,
-        k_spline = k_spline,
-        bs_type = bs_type,
-        select = select,
-        nichd_spline = nichd_spline
+run_neg_batch_pass <- function(pass_tag, ade_pass, red_pct, cl) {
+
+  # Export ade_pass from this function's local environment to all workers
+  # clusterExport by default looks in .GlobalEnv, so envir must be set explicitly here since ade_pass is a function argument, not a global variable.
+  clusterExport(cl, "ade_pass", envir = environment())
+
+  start_batch <- detect_neg_checkpoints(output_dir, pass_tag)
+
+  for (batch in start_batch:n_batches) {
+
+    start_idx <- (batch - 1) * batch_size_neg + 1
+    end_idx <- min(batch * batch_size_neg, nrow(selected_negatives))
+    batch_indices <- start_idx:end_idx
+
+    message(sprintf("\n[%s] Batch %d / %d  (triplets %d-%d)",
+                    pass_tag, batch, n_batches, start_idx, end_idx))
+    batch_results <- foreach(
+      idx = batch_indices,
+      .packages = c("data.table", "mgcv"),
+      .errorhandling = "pass",
+      .verbose = FALSE,
+      .options.RNG = 7113
+    ) %dorng% {
+
+      set.seed(7113 + idx)
+
+      rowt <- selected_negatives[idx]
+      rowt$type <- "negative"
+
+      # Basic co-occurrence counts used as fallback when the model fails
+      counts <- tryCatch(
+        calc_basic_counts(ade_pass, rowt$drugA, rowt$drugB, rowt$meddra),
+        error = function(e) list(n_events_coadmin = NA, n_events_total = NA, n_coadmin = NA)
       )
-      
-      classic_res <- calculate_classic_ior(
-        drugA_id = rowt$drugA,
-        drugB_id = rowt$drugB,
-        event_id = rowt$meddra,
-        ade_data = ade_raw_dt
-      )
-      
-      classic_reri <- calculate_classic_reri(
-        drugA_id = rowt$drugA,
-        drugB_id = rowt$drugB,
-        event_id = rowt$meddra,
-        ade_data = ade_raw_dt  
-      )
-      
-      if (!model_res$success) {
-        data.table(
-          triplet_id = rowt$triplet_id,
-          drugA = rowt$drugA,
-          drugB = rowt$drugB,
-          meddra = rowt$meddra,
-          type = "negative",
-          reduction_pct = 0,
-          N = counts_neg$n_events_coadmin,
-          model_success = FALSE,
-          n_events = counts_neg$n_events_total,
-          n_coadmin = counts_neg$n_coadmin,
-          n_stages_significant = NA_integer_,
-          max_ior = NA_real_,
-          mean_ior = NA_real_,
-          model_aic = NA_real_,
-          stage = list(1:7),
-          log_ior = list(rep(NA_real_, 7)),
-          log_ior_lower90 = list(rep(NA_real_, 7)),
-          ior_values = list(rep(NA_real_, 7)),
-          formula_used = if(!is.null(model_res$formula_attempted)) model_res$formula_attempted else NA_character_,
-          message = if(!is.null(model_res$error_msg)) model_res$error_msg else NA_character_,
-          classic_success = classic_res$success,
-          log_ior_classic = list(rep(NA_real_, 7)),
-          log_ior_classic_lower90 = list(rep(NA_real_, 7)),
-          ior_classic = list(rep(NA_real_, 7)),
-          reri_classic_success = FALSE,
-          RERI_classic = list(rep(NA_real_, 7)),
-          RERI_classic_lower90 = list(rep(NA_real_, 7)),
-          RERI_classic_upper90 = list(rep(NA_real_, 7)),
-          RERI_classic_se = list(rep(NA_real_, 7))
-        )
-      } else {
-        data.table(
-          triplet_id = rowt$triplet_id,
-          drugA = rowt$drugA,
-          drugB = rowt$drugB,
-          meddra = rowt$meddra,
-          type = "negative",
-          reduction_pct = 0,
-          N = model_res$n_events_coadmin,
-          model_success = TRUE,
-          n_coadmin = model_res$n_coadmin,
-          n_events = model_res$n_events_total,
-          n_stages_significant = model_res$n_stages_significant,
-          max_ior = model_res$max_ior,
-          mean_ior = model_res$mean_ior,
-          model_aic = model_res$model_aic,
-          stage = list(1:7),
-          log_ior = list(model_res$log_ior),
-          log_ior_lower90 = list(model_res$log_ior_lower90),
-          ior_values = list(model_res$ior_values),
-          classic_success = classic_res$success,
-          log_ior_classic = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic) else list(rep(NA_real_, 7)),
-          log_ior_classic_lower90 = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic_lower90) else list(rep(NA_real_, 7)),
-          ior_classic = if(classic_res$success) list(classic_res$results_by_stage$ior_classic) else list(rep(NA_real_, 7)),
-          reri_classic_success = classic_reri$success,
-          reri_values = list(model_res$reri_values),
-          reri_lower90 = list(model_res$reri_lower90),
-          reri_upper90 = list(model_res$reri_upper90),
-          n_stages_reri_significant = model_res$n_stages_reri_significant,
-          RERI_classic = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic) else list(rep(NA_real_, 7)),
-          RERI_classic_lower90 = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_lower90) else list(rep(NA_real_, 7)),
-          RERI_classic_upper90 = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_upper90) else list(rep(NA_real_, 7)),
-          RERI_classic_se = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_se) else list(rep(NA_real_, 7))
-        )
-      }
-    }, error = function(e) {
-      data.table(
-        triplet_id = rowt$triplet_id,
-        drugA = rowt$drugA,
-        drugB = rowt$drugB,
-        meddra = rowt$meddra,
-        type = "negative",
-        reduction_pct = 0,
-        N = counts_neg$n_events_coadmin,
-        model_success = FALSE,
-        n_events = counts_neg$n_events_total,
-        n_coadmin = counts_neg$n_coadmin,
-        error_msg = paste("Error:", e$message)
-      )
-    })
-    
-    all_results[[1]] <- base_result
-    
-    # Loop over reduction levels for downsampling analysis
-    for (red_pct in reduction_levels) {
-      
-      # Recompute counts using the reduced dataset
-      reduced_result <- tryCatch({
-        # Load the pre-computed reduced dataset for this reduction level
-        ade_reduced <- reduced_datasets[[as.character(red_pct)]]
-        counts_red <- tryCatch({
-             calc_basic_counts(ade_reduced, rowt$drugA, rowt$drugB, rowt$meddra)
-        }, error = function(e) list(n_events_coadmin=NA, n_events_total=NA, n_coadmin=NA))
-        
+
+      tryCatch({
+
         model_res <- fit_gam(
           drugA_id = rowt$drugA,
           drugB_id = rowt$drugB,
           event_id = rowt$meddra,
-          ade_data = ade_reduced,
+          ade_data = ade_pass,
           spline_individuales = spline_individuales,
           include_sex = include_sex,
           include_stage_sex = include_stage_sex,
@@ -780,22 +652,23 @@ for (batch in start_batch_neg:n_batches) {
           select = select,
           nichd_spline = nichd_spline
         )
-        
+
         classic_res <- calculate_classic_ior(
           drugA_id = rowt$drugA,
           drugB_id = rowt$drugB,
           event_id = rowt$meddra,
-          ade_data = ade_reduced
+          ade_data = ade_pass
         )
-        
+
         classic_reri <- calculate_classic_reri(
           drugA_id = rowt$drugA,
           drugB_id = rowt$drugB,
           event_id = rowt$meddra,
-          ade_data = ade_reduced
+          ade_data = ade_pass
         )
-        
+
         if (!model_res$success) {
+          # GAM failed .return NA placeholders for all model-derived columns
           data.table(
             triplet_id = rowt$triplet_id,
             drugA = rowt$drugA,
@@ -803,10 +676,10 @@ for (batch in start_batch_neg:n_batches) {
             meddra = rowt$meddra,
             type = "negative",
             reduction_pct = red_pct,
-            N = counts_red$n_events_coadmin,
+            N = counts$n_events_coadmin,
             model_success = FALSE,
-            n_events = counts_red$n_events_total,
-            n_coadmin = counts_red$n_coadmin,
+            n_events = counts$n_events_total,
+            n_coadmin = counts$n_coadmin,
             n_stages_significant = NA_integer_,
             max_ior = NA_real_,
             mean_ior = NA_real_,
@@ -815,7 +688,9 @@ for (batch in start_batch_neg:n_batches) {
             log_ior = list(rep(NA_real_, 7)),
             log_ior_lower90 = list(rep(NA_real_, 7)),
             ior_values = list(rep(NA_real_, 7)),
-            classic_success = FALSE,
+            formula_used = if (!is.null(model_res$formula_attempted)) model_res$formula_attempted else NA_character_,
+            message = if (!is.null(model_res$error_msg))         model_res$error_msg         else NA_character_,
+            classic_success = classic_res$success,
             log_ior_classic = list(rep(NA_real_, 7)),
             log_ior_classic_lower90 = list(rep(NA_real_, 7)),
             ior_classic = list(rep(NA_real_, 7)),
@@ -827,11 +702,10 @@ for (batch in start_batch_neg:n_batches) {
             RERI_classic = list(rep(NA_real_, 7)),
             RERI_classic_lower90 = list(rep(NA_real_, 7)),
             RERI_classic_upper90 = list(rep(NA_real_, 7)),
-            RERI_classic_se = list(rep(NA_real_, 7)),
-            formula_used = if(!is.null(model_res$formula_attempted)) model_res$formula_attempted else NA_character_,
-            error_msg = if(!is.null(model_res$error_msg)) model_res$error_msg else NA_character_
+            RERI_classic_se = list(rep(NA_real_, 7))
           )
         } else {
+          # GAM succeeded. store all per-stage estimates
           data.table(
             triplet_id = rowt$triplet_id,
             drugA = rowt$drugA,
@@ -841,7 +715,7 @@ for (batch in start_batch_neg:n_batches) {
             reduction_pct = red_pct,
             N = model_res$n_events_coadmin,
             model_success = TRUE,
-            n_coadmin = model_res$n_coadmin,
+            n_coadmin  = model_res$n_coadmin,
             n_events = model_res$n_events_total,
             n_stages_significant = model_res$n_stages_significant,
             max_ior = model_res$max_ior,
@@ -852,25 +726,22 @@ for (batch in start_batch_neg:n_batches) {
             log_ior_lower90 = list(model_res$log_ior_lower90),
             ior_values = list(model_res$ior_values),
             classic_success = classic_res$success,
-            log_ior_classic = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic) else list(rep(NA_real_, 7)),
-            log_ior_classic_lower90 = if(classic_res$success) list(classic_res$results_by_stage$log_ior_classic_lower90) else list(rep(NA_real_, 7)),
-            ior_classic = if(classic_res$success) list(classic_res$results_by_stage$ior_classic) else list(rep(NA_real_, 7)),
+            log_ior_classic = if (classic_res$success) list(classic_res$results_by_stage$log_ior_classic) else list(rep(NA_real_, 7)),
+            log_ior_classic_lower90 = if (classic_res$success) list(classic_res$results_by_stage$log_ior_classic_lower90) else list(rep(NA_real_, 7)),
+            ior_classic = if (classic_res$success) list(classic_res$results_by_stage$ior_classic) else list(rep(NA_real_, 7)),
             reri_classic_success = classic_reri$success,
             reri_values = list(model_res$reri_values),
             reri_lower90 = list(model_res$reri_lower90),
             reri_upper90 = list(model_res$reri_upper90),
             n_stages_reri_significant = model_res$n_stages_reri_significant,
-            RERI_classic = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic) else list(rep(NA_real_, 7)),
-            RERI_classic_lower90 = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_lower90) else list(rep(NA_real_, 7)),
-            RERI_classic_upper90 = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_upper90) else list(rep(NA_real_, 7)),
-            RERI_classic_se = if(classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_se) else list(rep(NA_real_, 7))
+            RERI_classic = if (classic_reri$success) list(classic_reri$results_by_stage$RERI_classic) else list(rep(NA_real_, 7)),
+            RERI_classic_lower90 = if (classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_lower90) else list(rep(NA_real_, 7)),
+            RERI_classic_upper90 = if (classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_upper90) else list(rep(NA_real_, 7)),
+            RERI_classic_se = if (classic_reri$success) list(classic_reri$results_by_stage$RERI_classic_se) else list(rep(NA_real_, 7))
           )
         }
+
       }, error = function(e) {
-        counts_red <- tryCatch(
-          calc_basic_counts(ade_reduced, rowt$drugA, rowt$drugB, rowt$meddra),
-          error = function(e2) list(n_events_coadmin = NA, n_events_total = NA, n_coadmin = NA)
-        )
         data.table(
           triplet_id = rowt$triplet_id,
           drugA = rowt$drugA,
@@ -878,83 +749,181 @@ for (batch in start_batch_neg:n_batches) {
           meddra = rowt$meddra,
           type = "negative",
           reduction_pct = red_pct,
-          N = counts_red$n_events_coadmin,
+          N = counts$n_events_coadmin,
           model_success = FALSE,
-          n_events = counts_red$n_events_total,
-          n_coadmin = counts_red$n_coadmin,
-          error_msg = paste("Error en reducción", red_pct, ":", e$message)
+          n_events = counts$n_events_total,
+          n_coadmin = counts$n_coadmin,
+          error_msg = paste("Unhandled error:", e$message)
         )
       })
-      
-      all_results[[length(all_results) + 1]] <- reduced_result
-      
-      rm(ade_reduced); gc(verbose = FALSE)
-    }
-    
-    combined_results <- rbindlist(all_results, fill = TRUE)
-    return(combined_results)
-  }  
-  batch_results_clean <- Filter(function(x) !inherits(x, "error"), batch_results)
-  batch_results_normalized <- lapply(batch_results_clean, function(x) {
-    if (is.data.table(x) && "reduction_pct" %in% names(x)) {
-      x
-    } else {
-      normalize_triplet_result(x)
-    }
-  })
-  batch_dt <- rbindlist(batch_results_normalized, fill = TRUE)
-  
-  negatives_scores_list[[batch]] <- batch_dt
-  
-  # Save negative checkpoint every save_interval batches or at the last one
-  if (batch %% save_interval == 0 || batch == n_batches) {
-    checkpoint_file_neg <- paste0(output_dir, "checkpoint_negatives_batch_", batch, ".rds")
-    saveRDS(batch_dt, checkpoint_file_neg)
-    message(sprintf("Checkpoint guardado: %s", checkpoint_file_neg))
-  }
-  
-  # Capture success count before removing batch_dt from memory
-  n_exitosos_batch <- sum(batch_dt$model_success & batch_dt$reduction_pct == 0, na.rm = TRUE)
 
-  rm(batch_results, batch_results_clean, batch_results_normalized, batch_dt)
-  gc()
-  
-  message("Lote completado: ", sum(negatives_scores_list[[batch]]$model_success & 
-                                     negatives_scores_list[[batch]]$reduction_pct == 0, na.rm = TRUE), " exitosos (base)")
+    } # end foreach
+
+    # Filter out foreach-level condition objects (distinct from per-triplet
+    # errors already handled by the inner tryCatch above)
+    batch_results_clean <- Filter(function(x) !inherits(x, "error"), batch_results)
+
+    if (length(batch_results_clean) > 0) {
+      batch_dt <- rbindlist(batch_results_clean, fill = TRUE)
+
+      # Write to disk immediately — this is the only stored copy of this batch;
+      # freed right after to prevent accumulation across batches
+      checkpoint_file <- sprintf(
+        "%scheckpoint_neg_%s_batch_%d.rds", output_dir, pass_tag, batch
+      )
+      saveRDS(batch_dt, checkpoint_file)
+
+      message(sprintf("  Checkpoint saved: %s  (%d/%d successful)",
+                      basename(checkpoint_file),
+                      sum(batch_dt$model_success, na.rm = TRUE),
+                      nrow(batch_dt)))
+      rm(batch_dt)
+    }
+
+    rm(batch_results, batch_results_clean)
+    gc(verbose = FALSE)
+
+  } # end batch loop
 }
-stopCluster(cl)
 
-negatives_scores <- rbindlist(negatives_scores_list, fill = TRUE)
-rm(negatives_scores_list)
+# Workers receive only ade_raw_dt. no reduced copies exported here
+message(sprintf("\nPass 1 / %d: base dataset (reduction = 0%%) ",
+                length(reduction_levels) + 1))
+
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+
+clusterExport(cl, c(
+  "fit_gam", "ade_raw_dt", "z90",
+  "selected_negatives", "niveles_nichd",
+  "spline_individuales", "include_sex", "include_stage_sex",
+  "k_spline", "nichd_spline", "include_nichd",
+  "bs_type", "select", "method",
+  "calculate_classic_ior", "calculate_classic_reri",
+  "calc_basic_counts"
+), envir = environment())
+
+clusterEvalQ(cl, {
+  library(data.table)
+  library(mgcv)
+  library(MASS)
+  library(doRNG)
+})
+
+run_neg_batch_pass(pass_tag = "base", ade_pass = ade_raw_dt, red_pct = 0, cl = cl)
+
+stopCluster(cl)
 gc()
 
-# Save negative results per reduction level
+# Pass 2
+# Each iteration:
+#  Builds a single reduced copy of the dataset for this level only
+#  Starts a fresh cluster and exports only that one copy
+#  Processes all batches for this level
+#  Stops the cluster and frees the reduced dataset before the next iteration
+
+for (red_pct in reduction_levels) {
+
+  pass_tag <- sprintf("red%d", red_pct)
+  n_pass <- which(reduction_levels == red_pct) + 1
+
+  message(sprintf("\nPass %d / %d: reduced dataset (%d%% reduction)",
+                  n_pass, length(reduction_levels) + 1, red_pct))
+
+  # Build this level's reduced dataset. never co-exists with another reduced copy
+  ade_reduced <- reduce_dataset_by_stage(ade_raw_dt, red_pct, seed = 7113)
+
+  cl <- makeCluster(n_cores)
+  registerDoParallel(cl)
+
+  clusterExport(cl, c(
+    "fit_gam", "z90",
+    "selected_negatives",
+    "spline_individuales", "include_sex", "include_stage_sex",
+    "k_spline", "nichd_spline", "include_nichd",
+    "bs_type", "select", "method",
+    "calculate_classic_ior", "calculate_classic_reri",
+    "calc_basic_counts",
+    "ade_reduced"          # single reduced copy, not a list of all levels
+  ), envir = environment())
+
+  clusterEvalQ(cl, {
+    library(data.table)
+    library(mgcv)
+    library(MASS)
+    library(doRNG)
+  })
+
+  run_neg_batch_pass(pass_tag = pass_tag, ade_pass = ade_reduced, red_pct = red_pct, cl = cl)
+
+  stopCluster(cl)
+
+  # Release the reduced dataset before the next iteration creates a new one
+  rm(ade_reduced)
+  gc()
+}
+
+################################################################################
+# Assemble final results from checkpoints and save per reduction level
+################################################################################
+# All pass results live on disk as per-batch checkpoint files. This is the
+# first time the complete dataset is materialised in memory, and only after
+# every cluster has been stopped and its memory released.
+
+all_pass_tags <- c("base", sprintf("red%d", reduction_levels))
+
+negatives_scores <- rbindlist(
+  lapply(all_pass_tags, function(tag) {
+    cp_files <- sort(list.files(
+      output_dir,
+      pattern = sprintf("checkpoint_neg_%s_batch_\\d+\\.rds", tag),
+      full.names = TRUE
+    ))
+    if (length(cp_files) == 0) {
+      warning(sprintf("No checkpoint files found for pass '%s'", tag))
+      return(NULL)
+    }
+    rbindlist(lapply(cp_files, readRDS), fill = TRUE)
+  }),
+  fill = TRUE
+)
+
+message(sprintf("Total negative rows assembled: %s",
+                format(nrow(negatives_scores), big.mark = ",")))
+message(sprintf("Successful (base): %d",
+                sum(negatives_scores$model_success & negatives_scores$reduction_pct == 0,
+                    na.rm = TRUE)))
+
+# Save one RDS and one flat CSV per reduction level for downstream scripts
 for (red_pct in c(0, reduction_levels)) {
-  suffix_file <- if(red_pct == 0) "" else paste0("_", red_pct)
-  
+  suffix_file <- if (red_pct == 0) "" else paste0("_", red_pct)
+
   subset_data <- negatives_scores[reduction_pct == red_pct]
-  
+
   if (nrow(subset_data) > 0) {
-    # Prepare CSV version
+
+    saveRDS(subset_data,
+            paste0(output_dir, "negative_triplets_results", suffix_file, ".rds"))
+
+    # Flatten list columns to comma-separated strings for CSV compatibility
     subset_csv <- copy(subset_data)
-    
     list_cols <- names(subset_csv)[sapply(subset_csv, is.list)]
-    
+
     for (col in list_cols) {
       subset_csv[, (col) := sapply(get(col), function(x) {
         if (is.null(x) || length(x) == 0) return(NA_character_)
         paste(x, collapse = ",")
       })]
     }
-    
-    fwrite(subset_csv, paste0(output_dir, "negative_triplets_results", suffix_file, ".csv"))
-    saveRDS(subset_data, paste0(output_dir, "negative_triplets_results", suffix_file, ".rds"))
+
+    fwrite(subset_csv,
+           paste0(output_dir, "negative_triplets_results", suffix_file, ".csv"))
+    rm(subset_csv)
   }
 }
 
+rm(negatives_scores)
 gc()
-
-message("\nNegativos exitosos (base): ", sum(negatives_scores$model_success & negatives_scores$reduction_pct == 0, na.rm = TRUE))
 
 ################################################################################
 # Null pool creation
