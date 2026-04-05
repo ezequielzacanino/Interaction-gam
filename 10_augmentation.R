@@ -837,7 +837,7 @@ for (red_pct in reduction_levels) {
   registerDoParallel(cl)
 
   clusterExport(cl, c(
-    "fit_gam", "z90",
+    "fit_gam", "z90", "niveles_nichd",
     "selected_negatives",
     "spline_individuales", "include_sex", "include_stage_sex",
     "k_spline", "nichd_spline", "include_nichd",
