@@ -1206,63 +1206,6 @@ calculate_classic_reri <- function(drugA_id, drugB_id, event_id, ade_data) {
 }
 
 ################################################################################
-# Normalization function
-################################################################################
-
-# Normalizes a triplet result, replacing NULL list fields with default vectors
-#
-# Return:
-# Normalized list with default vectors instead of NULL
-# 
-# Implementation:
-# Prevents rbindlist errors when some list-type fields are NULL
-# Necessary in parallelized contexts where some triplets may fail to converge
-
-normalize_triplet_result <- function(result) {
-  
-  # List-type fields that must be present
-  list_fields <- c("stage", "log_ior", "log_ior_lower90", "ior_values",
-                  "log_ior_classic", "log_ior_classic_lower90", "ior_classic")
-  
-  for (field in list_fields) {
-    if (is.null(result[[field]])) {
-      result[[field]] <- list(numeric(0))
-    }
-  }
-  
-  # If lists are empty, fill with default values
-  if (length(result$stage[[1]]) == 0) {
-    result$stage <- list(1:7)
-  }
-  
-  if (length(result$log_ior[[1]]) == 0) {
-    result$log_ior <- list(rep(NA_real_, 7))
-  }
-  
-  if (length(result$log_ior_lower90[[1]]) == 0) {
-    result$log_ior_lower90 <- list(rep(NA_real_, 7))
-  }
-  
-  if (length(result$ior_values[[1]]) == 0) {
-    result$ior_values <- list(rep(NA_real_, 7))
-  }
-  
-  if (length(result$log_ior_classic[[1]]) == 0) {
-    result$log_ior_classic <- list(rep(NA_real_, 7))
-  }
-  
-  if (length(result$log_ior_classic_lower90[[1]]) == 0) {
-    result$log_ior_classic_lower90 <- list(rep(NA_real_, 7))
-  }
-  
-  if (length(result$ior_classic[[1]]) == 0) {
-    result$ior_classic <- list(rep(NA_real_, 7))
-  }
-  
-  return(result)
-}
-
-################################################################################
 # Bootstrap function by dynamic type and stage
 ################################################################################
 
