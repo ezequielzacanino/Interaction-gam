@@ -1,12 +1,12 @@
 ################################################################################
-# Análisis de redes 
+# Network analysis
 # Script: 40_network.R
 ################################################################################
 
 source("00_functions.R", local = TRUE)   
 
 ################################################################################
-# Configuración
+# Configuration
 ################################################################################
 
 percentil <- "p95"          
@@ -14,12 +14,12 @@ use_null_threshold <- TRUE
 
 min_reports_triplet <- 5   
 min_stages_positive <- 1    
-n_random_networks <- 500    # n redes aleatorias modelo nulo 
-jaccard_threshold <- 0.1   # umbral Jaccard para considerar soporte biológico
+n_random_networks <- 500    # number of random networks for the null model
+jaccard_threshold <- 0.1   # Jaccard threshold to consider biological support
 
-# Parámetros grafo bipartito 
-n_drugs_bipartite <- 50    # drogas (top por degree en g_S) en grafo bipartito
-n_genes_bipartite <- 10     # genes (top por degree en g_B) en grafo bipartito
+# Bipartite graph parameters
+n_drugs_bipartite <- 50    # drugs (top by degree in g_S) in the bipartite graph
+n_genes_bipartite <- 10     # genes (top by degree in g_B) in the bipartite graph
 
 output_dir <- paste0("./results/", suffix, "/network/")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -30,82 +30,82 @@ null_thresholds_ior <- fread(paste0(ruta_null_dist, "null_thresholds.csv"))
 thresh_col <- paste0("threshold_", percentil)  # e.g. "threshold_p95"
 null_thresholds_ior <- null_thresholds_ior[, .(stage, threshold_ior = get(thresh_col))]
 
-# Umbrales para RERI (por las dudas)
+# RERI thresholds (kept for completeness / future use)
 null_thresholds_reri <- fread(paste0(ruta_null_dist, "null_thresholds_reri.csv"))
 null_thresholds_reri <- null_thresholds_reri[, .(stage, threshold_reri = get(thresh_col))]
 
-# Combina ambos umbrales
+# Merge both threshold tables
 null_thresholds <- merge(null_thresholds_ior, null_thresholds_reri, by = "stage")
 
 ################################################################################
-# Función helper
+# Helper function
 ################################################################################
 
-# Calcula cuántas etapas son positivas para un triplete dado.
+# Counts how many developmental stages are positive for a given triplet.
 #
-# Parámetros:
-# lower90_vec: vector numérico con el límite inferior del IC 90% de log_IOR (una entrada por etapa)
-# null_thresh: data.table con columnas stage (1:7) y threshold_ior (umbral nulo por etapa)
-# use_null: lógico; TRUE = exige superar el umbral nulo además de lower90 > 0
+# Parameters:
+# lower90_vec: numeric vector with the lower bound of the 90% CI of log_IOR (one entry per stage)
+# null_thresh: data.table with columns stage (1:7) and threshold_ior (null threshold per stage)
+# use_null: logical; TRUE = requires exceeding the null threshold in addition to lower90 > 0
 #
-# Retorna: entero con el número de etapas donde el triplete es positivo
+# Returns: integer with the number of stages where the triplet is positive
 
 count_positive_stages_triplet <- function(lower90_vec, null_thresh, use_null) {
   if (is.null(lower90_vec) || length(lower90_vec) == 0) return(0L)
   stages <- seq_along(lower90_vec)  
   if (use_null) {
-    # busco umbral nulo por etapa con indice
+    # look up null threshold per stage by index
     thresh <- null_thresh$threshold_ior[match(stages, null_thresh$stage)]
     as.integer(sum(lower90_vec > 0 & lower90_vec > thresh, na.rm = TRUE))
   } else {
-    # si no nulo, solo nominal
+    # nominal criterion only (no null threshold)
     as.integer(sum(lower90_vec > 0, na.rm = TRUE))
   }
 }
 
 ################################################################################
-# Unificación de ids y carga de vocabulario
+# ID unification and vocabulary loading
 ################################################################################
 
-# carga vocabulario completo de OMOP (concept.csv)
+# load full OMOP vocabulary (concept.csv)
 concept <- fread(ruta_concept, quote = "")
-# minusculas para evitar problemas de joint
+# lowercase to avoid join issues
 concept[, `:=`(
   vocabulary_id = tolower(vocabulary_id),
   concept_class_id = tolower(concept_class_id)
 )]
 
-# Extrae ATC del vocabulario (para mapear a RxNorm)
+# Extract ATC concepts from the vocabulary (for mapping to RxNorm)
 atc_concepts <- concept[vocabulary_id == "atc", .(
   concept_id = as.character(concept_id),
   atc_code   = concept_code
 )]
-# extraigo grupo anatómico (letra de código ATC, para colorear nodos)
+# extract anatomical group (first letter of ATC code, used to color nodes)
 atc_concepts[, atc_group := substr(atc_code, 1, 1)]
 
-# tabla de drogas con sus atc ids y nombres
+# drug table with ATC ids and names
 drug_info <- fread(ruta_drug_info)
 drug_info[, `:=`(
   atc_concept_id = as.character(atc_concept_id),
-  # Limpio nombres
+  # clean names
   base_name = tolower(trimws(sub("[;,].*", "", atc_concept_name)))
 )]
 
-# Para drogas con el mismo nombre (base_name) pero distinto atc id,
-# elige el id mínimo como id canónico para evitar duplicados
+# For drugs with the same name (base_name) but different ATC ids,
+# choose the minimum id as the canonical id to avoid duplicates
 canonical_map <- drug_info[, .(canonical_id = min(atc_concept_id)), by = base_name]
 
-# tabla de traducción con id canónico de cada atc concept
+# translation table with canonical ATC concept id for each entry
 translation_table <- merge(drug_info[, .(atc_concept_id, base_name)], canonical_map, by = "base_name")
 
-# mapa de id canónico a nombre en chr
+# map from canonical id to drug name (character)
 drug_names_map <- unique(translation_table[, .(
   atc_concept_id = canonical_id,
   drug_name = base_name
 )])
 setkey(drug_names_map, atc_concept_id)
 
-# Agrego grupo ATC (letra) al mapa de nombres para colorear los nodos
+# Add ATC group (first letter) to the name map for node coloring
 drug_names_map <- merge(
   drug_names_map,
   atc_concepts[, .(concept_id, atc_group)],
@@ -114,37 +114,37 @@ drug_names_map <- merge(
 )
 
 ################################################################################
-# Carga de datos y preprocesamiento
+# Data loading and preprocessing
 ################################################################################
 
 ade_raw_dt <- fread(ruta_ade_raw)
 ade_raw_dt[, atc_concept_id := as.character(atc_concept_id)]
 
-# cambio atc_concept_id por id canónica 
+# replace atc_concept_id with canonical id
 ade_raw_dt <- merge(ade_raw_dt, translation_table[, .(atc_concept_id, canonical_id)],
                     by = "atc_concept_id", all.x = TRUE)
-ade_raw_dt[!is.na(canonical_id), atc_concept_id := canonical_id]  # aplica el reemplazo
-ade_raw_dt[, canonical_id := NULL]    # limpia columna auxiliar
+ade_raw_dt[!is.na(canonical_id), atc_concept_id := canonical_id]   # apply replacement
+ade_raw_dt[, canonical_id := NULL]   # drop auxiliary column
 
-# saco duplicados
+# remove duplicates
 ade_raw_dt <- unique(ade_raw_dt, by = c("safetyreportid", "atc_concept_id", "meddra_concept_id"))
 
 ade_raw_dt[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
 ade_raw_dt[, nichd_num := as.integer(nichd)]
 
 ###########
-# Carga de datos droga-gen
+# Drug-gene data loading
 ###########
 
 drug_gene <- fread(ruta_drug_gene)
 drug_gene[, atc_concept_id := as.character(atc_concept_id)]
 
-# unifico ids canónicos en la tabla droga-gen
+# apply canonical ids to the drug-gene table as well
 drug_gene <- merge(drug_gene, translation_table[, .(atc_concept_id, canonical_id)],
                    by = "atc_concept_id", all.x = TRUE)
 drug_gene[!is.na(canonical_id), atc_concept_id := canonical_id]
 drug_gene[, canonical_id := NULL]
-# elimino duplicados
+# remove duplicates
 drug_gene <- unique(drug_gene, by = c("atc_concept_id", "gene_symbol"))
 
 message(sprintf("  Drogas únicas: %d  Asociaciones droga-gen: %d  Genes únicos: %d",
@@ -153,52 +153,52 @@ message(sprintf("  Drogas únicas: %d  Asociaciones droga-gen: %d  Genes únicos
                 uniqueN(drug_gene$gene_symbol)))
 
 ################################################################################
-# Construcción de tripletes
+# Triplet construction
 ################################################################################
 
-# agrego por reporte: lista de drogas, lista de eventos, y etapa 
+# aggregate by report: list of drugs, list of events, and developmental stage
 reports_meta <- ade_raw_dt[, .(
-  drugs     = list(unique(atc_concept_id[!is.na(atc_concept_id)])),
-  events    = list(unique(meddra_concept_id[!is.na(meddra_concept_id)])),
-  nichd_num = unique(nichd_num[!is.na(nichd_num)])[1]   # toma la primera etapa si hay varias
+  drugs = list(unique(atc_concept_id[!is.na(atc_concept_id)])),
+  events = list(unique(meddra_concept_id[!is.na(meddra_concept_id)])),
+  nichd_num = unique(nichd_num[!is.na(nichd_num)])[1]  # take first stage if multiple present
 ), by = safetyreportid]
 
-# Genera todos los pares A-B por eventos para cada reporte
-# make_triplets() de 00_functions.R
+# Generate all A-B drug pairs per event for each report
+# make_triplets() is defined in 00_functions.R
 triplets_list <- lapply(seq_len(nrow(reports_meta)), function(i) {
-  # definición de triplete
+  # triplet definition: at least 2 drugs and 1 event per report
   if (length(reports_meta$drugs[[i]]) >= 2 && length(reports_meta$events[[i]]) >= 1)
     make_triplets(reports_meta$drugs[[i]], reports_meta$events[[i]],
                   reports_meta$safetyreportid[i], reports_meta$nichd_num[i])
 })
 triplets_dt <- rbindlist(triplets_list, use.names = TRUE, fill = TRUE)
-rm(triplets_list, reports_meta); gc()   # libera memoria 
+rm(triplets_list, reports_meta); gc()   # free memory
 
-# filtro por requisitos mínimos
+# filter by minimum report requirement
 candidatos_triplets <- triplets_dt[, .N, by = .(drugA, drugB, meddra)][N >= min_reports_triplet]
-candidatos_triplets[, triplet_id := .I]   # id de triplete
+candidatos_triplets[, triplet_id := .I]   # assign triplet id
 message(sprintf(" Tripletes candidatos: %d", nrow(candidatos_triplets)))
 
 fwrite(candidatos_triplets, paste0(output_dir, "triplets_metadata.csv"))
 
 ################################################################################
-# Ajuste GAM
+# GAM fitting
 ################################################################################
 
-# carga si ya se hizo
+# load cached results if the run has already been completed
 cache_file <- paste0(output_dir, "all_triplets_results.rds")
 
-# si ya se corrió, usar
+# if already run, load from cache
 if (file.exists(cache_file)) {
   all_triplets_results <- readRDS(cache_file)
 } else {
-  # procesamiento por baches
+  # process in batches to manage memory
   all_results <- list()
   batch_size <- 500
   batch_num <- 0L
   n_total <- nrow(candidatos_triplets)
 
-  # clusters para disminuir tiempo
+  # parallel cluster to reduce runtime
   cl <- makeCluster(n_cores)
   registerDoParallel(cl)
   clusterExport(cl, c("fit_gam", "ade_raw_dt",
@@ -207,7 +207,7 @@ if (file.exists(cache_file)) {
                 envir = environment())
   clusterEvalQ(cl, { library(data.table); library(mgcv); library(MASS) })
 
-  # bucle para ajustar cada triplete dentro del bache
+  # loop: fit each triplet within the current batch
   for (start in seq(1, n_total, by = batch_size)) {
     batch_num <- batch_num + 1L
     batch_rows <- candidatos_triplets[start:min(start + batch_size - 1, n_total)]
@@ -231,14 +231,14 @@ if (file.exists(cache_file)) {
       )
     }
 
-    # resultados por bache
+    # collect results for the current batch
     batch_dt <- rbindlist(lapply(seq_along(batch_res), function(i) {
       res <- batch_res[[i]]
       rowt <- batch_rows[i]
       base <- data.table(triplet_id = rowt$triplet_id, drugA = rowt$drugA,
                          drugB = rowt$drugB, meddra = rowt$meddra,
                          n_reports = rowt$N)
-      if (is.null(res$success) || !res$success) # para ver fallos
+      if (is.null(res$success) || !res$success) # track failed fits
         return(cbind(base, model_success = FALSE))
 
       cbind(base, data.table(
@@ -253,10 +253,10 @@ if (file.exists(cache_file)) {
       ))
     }), fill = TRUE)
 
-    # checkpoints por si se para
+    # save checkpoints in case of interruption
     all_results[[batch_num]] <- batch_dt
     saveRDS(batch_dt, paste0(output_dir, "checkpoint_batch_", sprintf("%04d", batch_num), ".rds"))
-    # liberación de memoria
+    # release memory after each batch
     rm(batch_res, batch_dt); gc()
   }
 
@@ -271,21 +271,21 @@ message(sprintf("Exitosos: %d/%d (%.1f%%)",
                 100 * mean(all_triplets_results$model_success, na.rm = TRUE)))
 
 ################################################################################
-# Funciones para exportar objeto 
+# Functions to build the exportable object for downstream graphing
 ################################################################################
 
-# crea objeto exportable para la función de graficado de 31_metrics_graphs
+# creates an exportable object compatible with the plotting functions in 31_metrics_graphs
 
-# Función de conteos por etapa (equivale a calculate_triplet_counts)
+# Stage-level count function (equivalent to calculate_triplet_counts)
 count_by_stage <- function(ids, ade_dt) {
   if (length(ids) == 0) return(data.table(nichd_num = 1:7, n = 0L)) 
-  dt <- ade_dt[safetyreportid %in% ids, .(n = uniqueN(safetyreportid)), by = nichd_num] # numero de reportes por etapa para droga
+  dt <- ade_dt[safetyreportid %in% ids, .(n = uniqueN(safetyreportid)), by = nichd_num] # number of reports per stage for the drug
   dt <- merge(data.table(nichd_num = 1:7), dt, by = "nichd_num", all.x = TRUE)
   dt[is.na(n), n := 0L]
   dt[order(nichd_num)]
 }
 
-# creo objetos con conteos y les aplico función anterior para tenerlos por etapa
+# compute stage-level counts for each triplet using the function above
 calculate_counts_for_triplet <- function(drug_a, drug_b, meddra_event, ade_dt) {
   ids_a <- unique(ade_dt[atc_concept_id == drug_a, safetyreportid])
   ids_b <- unique(ade_dt[atc_concept_id == drug_b, safetyreportid])
@@ -302,12 +302,12 @@ calculate_counts_for_triplet <- function(drug_a, drug_b, meddra_event, ade_dt) {
   )
 }
 
-# Solo tripletes con modelo exitoso y con IOR calculado
+# Restrict to triplets with a successful model and a computed IOR
 dt_graph_base <- all_triplets_results[
   model_success == TRUE & !sapply(gam_log_ior_lower90, is.null)
 ]
 
-# calculo de conteos por etapa para los tripletes con las funciones anteriores
+# compute stage-level counts for the eligible triplets
 counts_list <- vector("list", nrow(dt_graph_base))
 for (i in seq_len(nrow(dt_graph_base))) {
   counts_list[[i]] <- calculate_counts_for_triplet(
@@ -318,8 +318,8 @@ for (i in seq_len(nrow(dt_graph_base))) {
   )
 }
 
-# Arma el objeto final con los nombres que espera expand_triplets_counts()
-# tambien columnas dummy para las métricas que no existen en este pipeline
+# Build the final object with the column names expected by expand_triplets_counts()
+# dummy columns are added for metrics that do not exist in this pipeline
 network_triplets_for_graphs <- dt_graph_base[, .(
   triplet_id,
   drugA,
@@ -327,14 +327,14 @@ network_triplets_for_graphs <- dt_graph_base[, .(
   meddra,
   n_reports,
   model_success,
-  reduction_pct = 0,       # requerido por el filtro de carga_datos_positive()
+  reduction_pct = 0,       # required by the carga_datos_positive() filter
   injection_success = TRUE,     # ídem
-  dynamic = "network",   # sin dinámica asignada; label neutro
+  dynamic = "network",   # no dynamics assigned; neutral label
   stage,
-  # renombro para que coincida con lo que lee expand_triplets_counts()
+  # rename to match what expand_triplets_counts() expects
   log_ior = log_ior,
   log_ior_lower90 = gam_log_ior_lower90,
-  # métricas que no existen en este pipeline → NULL, los if() del script las ignoran
+  # metrics that don't exist in this pipeline → NULL; if() checks in the script will skip them
   reri_values = list(NULL),
   reri_lower90 = list(NULL),
   reri_upper90 = list(NULL),
@@ -343,17 +343,17 @@ network_triplets_for_graphs <- dt_graph_base[, .(
   RERI_classic = list(NULL),
   RERI_classic_lower90 = list(NULL),
   RERI_classic_upper90 = list(NULL),
-  diagnostics = list(NULL)   # sin inyección. tryCatch devuelve rep(0L,7)
+  diagnostics = list(NULL)   # no injection; tryCatch returns rep(0L,7)
 )]
 
-# Agrega conteos como columna-lista
+# Attach stage-level counts as a list-column
 network_triplets_for_graphs[, counts_by_stage := counts_list]
 meddra_names <- concept[
   vocabulary_id == "meddra",
   .(meddra = as.character(concept_id), meddra_name = concept_name)
 ]
 
-# nombres de drogas y meddra event
+# resolve drug names and MedDRA event names
 network_triplets_for_graphs[, drugA_name := drug_names_map[as.character(drugA), drug_name]]
 network_triplets_for_graphs[, drugB_name := drug_names_map[as.character(drugB), drug_name]]
 network_triplets_for_graphs[, meddra := as.character(meddra)]
@@ -367,10 +367,11 @@ network_triplets_for_graphs <- merge(
 rm(dt_graph_base, counts_list); gc()
 
 ################################################################################
-# Clasificación de señales
+# Signal classification
 ################################################################################
 
-# positivo cada triplete con min_stages_positive etapas positivas (1 pero por si quiero cambiar)
+# a triplet is positive if it has at least min_stages_positive positive stages
+# (currently 1, parameterized for flexibility)
 positives <- if (
   "gam_log_ior_lower90" %in% names(all_triplets_results) &&
   any(all_triplets_results$model_success == TRUE, na.rm = TRUE)
@@ -387,7 +388,7 @@ positives <- if (
              n_stages_positive = integer(0))
 }
 
-# negativos
+# negatives: successful models that did not meet the positivity criterion
 negatives <- all_triplets_results[
   model_success == TRUE & !(triplet_id %in% positives$triplet_id),
   .(triplet_id, drugA, drugB, meddra)
@@ -400,20 +401,20 @@ saveRDS(network_triplets_for_graphs,
         paste0(output_dir, "network_triplets_for_graphs.rds"))
 
 ################################################################################
-# Capa S (señal/statistical)
+# Layer S (statistical / signal layer)
 ################################################################################
 
-# Grafo no dirigido de interacciones farmacológicas positivas
-dt_edges_stat  <- unique(positives[, .(from = pmin(drugA, drugB), to = pmax(drugA, drugB))])
+# Undirected graph of positive pharmacological interactions
+dt_edges_stat <- unique(positives[, .(from = pmin(drugA, drugB), to = pmax(drugA, drugB))])
 vec_nodes_stat <- unique(c(dt_edges_stat$from, dt_edges_stat$to))
 
 graph_stat_ddi <- graph_from_data_frame(dt_edges_stat, directed = FALSE)
 
 ################################################################################
-# Capa B (biológica) grafo bipartito droga-Gen
+# Layer B (biological layer) — drug-gene bipartite graph
 ################################################################################
 
-# reduzco las conexiones a las drogas presentes en la red estadística 
+# restrict connections to drugs present in the statistical network
 dt_edges_bio <- unique(drug_gene[atc_concept_id %in% vec_nodes_stat, .(from = atc_concept_id, to = gene_symbol)])
 dt_nodes_bio <- data.table(
   name = c(vec_nodes_stat, unique(dt_edges_bio$to)),
@@ -423,7 +424,7 @@ dt_nodes_bio <- data.table(
 graph_bio_gene <- graph_from_data_frame(dt_edges_bio, directed = FALSE, vertices = dt_nodes_bio)
 
 ################################################################################
-# métricas intercapas
+# Interlayer metrics
 ################################################################################
 
 get_drug_genes <- function(id_drug) dt_edges_bio[from == id_drug, to]
@@ -436,7 +437,7 @@ dt_edge_metrics <- rbindlist(lapply(seq_len(ecount(graph_stat_ddi)), function(i)
   genes_b <- get_drug_genes(drug_b)
   
   n_intersect <- length(intersect(genes_a, genes_b))
-  n_union     <- length(union(genes_a, genes_b))
+  n_union <- length(union(genes_a, genes_b))
   val_jaccard <- if (n_union > 0) n_intersect / n_union else 0
   
   val_distance <- tryCatch(distances(graph_bio_gene, v = drug_a, to = drug_b, mode = "all")[1, 1], 
@@ -447,7 +448,7 @@ dt_edge_metrics <- rbindlist(lapply(seq_len(ecount(graph_stat_ddi)), function(i)
              closes_triangle = n_intersect > 0)
 }))
 
-# atributos intercapa a las aristas del grafo estadístico
+# assign interlayer attributes to edges of the statistical graph
 E(graph_stat_ddi)$jaccard <- dt_edge_metrics$jaccard
 E(graph_stat_ddi)$n_shared <- dt_edge_metrics$n_shared
 E(graph_stat_ddi)$bio_distance <- dt_edge_metrics$bio_distance
@@ -459,45 +460,45 @@ fwrite(dt_edge_metrics, paste0(output_dir, "edge_metrics_interlayer.csv"))
 print(dt_edge_metrics)
 
 ################################################################################
-# Modelo nulo con rewiring paralelo preservando grados
+# Null model with degree-preserving rewiring (parallelized)
 ################################################################################
 
 file_null_cache <- paste0(output_dir, "null_model_cache.rds")
 
-# verifico si ya se corrio el rewiring
+# check if null model rewiring has already been run
 if (file.exists(file_null_cache)) {
   dt_null_results <- readRDS(file_null_cache)
 } else {
-  # paso data.table de aristas biológicas a data.frame para paralelización
+  # convert biological edge data.table to data.frame for export to parallel workers
   df_edges_bio <- as.data.frame(dt_edges_bio) 
   
-  # cluster
+  # parallel cluster setup
   cl <- makeCluster(n_cores)
   registerDoParallel(cl)
   clusterExport(cl, c("graph_stat_ddi", "graph_bio_gene", "df_edges_bio"), envir = environment()) # objetos
   clusterEvalQ(cl, library(igraph))
   
-  # bucle paralelizado
+  # parallelized rewiring loop
   dt_null_results <- foreach(i = seq_len(n_random_networks), .combine = rbind, 
                              .packages = "igraph", .options.RNG = 9427) %dorng% {
     graph_permuted <- rewire(graph_stat_ddi, keeping_degseq(niter = ecount(graph_stat_ddi) * 100)) # rewiring
     
     metrics <- sapply(seq_len(ecount(graph_permuted)), function(j) {
-      # nodos contectados por arista j
+      # nodes connected by edge j
       nodes_edge <- ends(graph_permuted, j)
-      # genes asociados a nodo drogaA
+      # genes associated with drug node A
       genes_a <- df_edges_bio$to[df_edges_bio$from == nodes_edge[1]]
-      # genes asociados a nodo drogaB
+      # genes associated with drug node B
       genes_b <- df_edges_bio$to[df_edges_bio$from == nodes_edge[2]]
       
-      # Jaccard entre conjuntos de genes
+      # Jaccard index between gene sets
       n_intersect <- length(intersect(genes_a, genes_b))
       n_union <- length(union(genes_a, genes_b))
       val_jaccard <- if (n_union > 0) n_intersect / n_union else 0
-      # distancia en el grafo biológico entre los dos fármacos 
+      # shortest path between the two drugs in the biological graph
       val_dist <- tryCatch(distances(graph_bio_gene, v = nodes_edge[1], to = nodes_edge[2], mode = "all")[1, 1], 
                               error = function(e) Inf)
-      # vector con jaccard, indicador de intersección y distancia
+      # return vector: Jaccard, shared-gene indicator, and biological distance
       c(val_jaccard, n_intersect > 0, val_dist)
     })
     
@@ -510,34 +511,34 @@ if (file.exists(file_null_cache)) {
 }
 
 ################################################################################
-# Test de fisher 
+# Fisher's exact test
 ################################################################################
 
-# pares positivos únicos
+# unique positive drug pairs
 dt_pairs_pos <- unique(positives[, .(drugA = pmin(drugA, drugB), drugB = pmax(drugA, drugB))])
 dt_pairs_pos[, has_signal := TRUE]
 
-# pares negativos únicos
+# unique negative drug pairs
 dt_pairs_neg <- unique(negatives[, .(drugA = pmin(drugA, drugB), drugB = pmax(drugA, drugB))])
 
-# saco de negativos los que son positivos para otro evento
+# exclude from negatives any pair that is positive for at least one other event
 dt_pairs_neg <- dt_pairs_neg[!dt_pairs_pos, on = c("drugA", "drugB")]
 dt_pairs_neg[, has_signal := FALSE]
 
-# uno pares
+# combine positive and negative pairs
 dt_all_pairs_unique <- rbind(dt_pairs_pos, dt_pairs_neg)
 
-# lista de genes por droga usando drug_gene original
+# gene list per drug from the original drug_gene table
 genes_por_droga <- split(drug_gene$gene_symbol, drug_gene$atc_concept_id)
 
-# calculo el jaccard y si comparten gen para todos los pares
+# compute Jaccard index and shared-gene indicator for all pairs
 dt_all_pairs_unique[, c("jaccard", "has_shared") := {
   
   resultados <- lapply(seq_len(.N), function(i) {
     genes_a <- genes_por_droga[[ drugA[i] ]]
     genes_b <- genes_por_droga[[ drugB[i] ]]
     
-    # si alguna de las drogas no tiene genes en la base de datos, jaccard 0
+    # if either drug has no gene annotations, Jaccard defaults to 0
     if (is.null(genes_a) || is.null(genes_b)) {
       return(list(0, FALSE))
     }
@@ -550,18 +551,18 @@ dt_all_pairs_unique[, c("jaccard", "has_shared") := {
     list(val_jaccard, n_intersect > 0)
   })
   
-  # devuelve como columnas
+  # return as two parallel columns
   list(sapply(resultados, `[[`, 1), sapply(resultados, `[[`, 2))
 }]
 
-# proporción de negativos que comparten genes
+# proportion of negative pairs that share at least one gene
 print(paste("Porcentaje de Negativos que comparten genes:", 
             round(dt_all_pairs_unique[has_signal == FALSE, mean(has_shared) * 100], 2), "%"))
 
 print(paste("Porcentaje de Positivos que comparten genes:", 
             round(dt_all_pairs_unique[has_signal == TRUE, mean(has_shared) * 100], 2), "%"))
 
-# test de fisher sobre pares unicos
+# Fisher's exact test on unique drug pairs
 tabla_fisher <- table(Signal = dt_all_pairs_unique$has_signal, 
                       SharedGenes = dt_all_pairs_unique$has_shared)
 print("Tabla de contingencia")
@@ -571,22 +572,22 @@ res_fisher <- fisher.test(tabla_fisher)
 print(res_fisher)
 
 ################################################################################
-# Regresión logística para predictores de detección de señal
+# Logistic regression: predictors of DDI signal detection
 ################################################################################
 
-# datos base
+# working dataset
 dt_logit <- copy(dt_all_pairs_unique)
 dt_logit[, has_signal := as.integer(has_signal)]
 dt_logit[, c("drugA", "drugB") := lapply(.SD, as.character), .SDcols = c("drugA", "drugB")]
 
-# Índice de Jaccard para todos los pares
-# lista original genes_por_droga para evitar fuga de datos
+# Jaccard index for all pairs
+# uses the original genes_por_droga list to avoid data leakage
 dt_logit[, jaccard_index := {
   res <- lapply(1:.N, function(i) {
     ga <- genes_por_droga[[ drugA[i] ]]
     gb <- genes_por_droga[[ drugB[i] ]]
     
-    # Si alguna droga no tiene genes mapeados, Jaccard es 0
+    # if either drug has no gene mappings, Jaccard defaults to 0
     if (is.null(ga) || is.null(gb)) return(0.0)
     
     n_intersect <- length(intersect(ga, gb))
@@ -598,10 +599,10 @@ dt_logit[, jaccard_index := {
       return(0.0)
     }
   })
-  unlist(res) # lista a vector numérico
+  unlist(res) # coerce list to numeric vector
 }]
 
-# controlo por "poder estadístico" (Número de reportes A+B)
+# control for "statistical power" (total reports for drug pair A+B)
 if(!exists("n_reports_pair")) {
   dt_logit[, n_reports_AB := 0]
 } else {
@@ -610,15 +611,15 @@ if(!exists("n_reports_pair")) {
   dt_logit[is.na(n_reports_AB), n_reports_AB := 0]
 }
 
-# ajusto modelo
-# controlo Jaccard ajustado por el sesgo de reporte
+# fit logistic regression model
+# Jaccard adjusted for reporting bias via n_reports_AB
 modelo_glm_jaccard <- glm(
   has_signal ~ jaccard_index + n_reports_AB, 
   data = dt_logit, 
   family = binomial(link = "logit")
 )
 
-# Tabla de resultados
+# Results table
 coeficientes <- summary(modelo_glm_jaccard)$coefficients
 intervalos <- confint.default(modelo_glm_jaccard) 
 
@@ -632,7 +633,7 @@ results_jaccard <- data.table(
 
 print(results_jaccard)
 
-# exporto
+# export
 fwrite(results_jaccard, paste0(output_dir, "regresion_logistica_jaccard.csv"))
 fwrite(dt_logit[, .(drugA, drugB, has_signal, jaccard_index, n_reports_AB)], 
        paste0(output_dir, "datos_regresion_jaccard.csv"))
@@ -643,40 +644,40 @@ message(sprintf("Pares con Jaccard > 0: %d (%.1f%%)",
                 100 * mean(dt_logit$jaccard_index > 0)))
 
 ################################################################################
-# resumen de métricas
+# Global metrics summary
 ################################################################################
 
-# métricas del modelo
+# model-level metrics
 n_triplets_evaluados <- nrow(all_triplets_results[model_success == TRUE])
 n_positivos <- nrow(positives)
 n_negativos <- nrow(negatives)
 
-# métricas de la capa S
+# layer S metrics
 n_nodos_S <- vcount(graph_stat_ddi)
 n_aristas_S <- ecount(graph_stat_ddi)
 
-# capa B
+# layer B metrics
 n_con_soporte_bio <- sum(E(graph_stat_ddi)$has_bio_support)
 pct_soporte_bio <- (n_con_soporte_bio / max(1, n_aristas_S)) * 100
 mean_jaccard_obs <- mean(E(graph_stat_ddi)$jaccard)
 
-# modelo nulo
+# null model metrics
 mean_jaccard_null <- mean(dt_null_results$mean_jaccard)
 sd_jaccard_null <- sd(dt_null_results$mean_jaccard)
 z_score_jaccard <- ifelse(sd_jaccard_null > 0, (mean_jaccard_obs - mean_jaccard_null) / sd_jaccard_null, NA)
 p_val_empirico <- sum(dt_null_results$mean_jaccard >= mean_jaccard_obs) / nrow(dt_null_results)
 
-# Fisher (crudo)
+# Fisher test (unadjusted)
 or_fisher <- res_fisher$estimate
 pval_fisher <- res_fisher$p.value
 
-# Regresión logística ajustada . extrae fila de has_signal
+# Adjusted logistic regression — extract row for has_signal
 or_adj_signal <- or_adj["has_signalTRUE"]
 ci_lo_adj_signal <- ci_adj["has_signalTRUE", 1]
 ci_hi_adj_signal <- ci_adj["has_signalTRUE", 2]
 pval_adj_signal <- pval_adj["has_signalTRUE"]
 
-# Tabla resumen
+# Summary table
 dt_resumen_metricas <- data.table(
   Metrica = c(
     "N tripletes ajustados exitosamente",
@@ -699,15 +700,15 @@ dt_resumen_metricas <- data.table(
     "p-value (OR ajustado, has_signal)"
   ),
   Valor = c(
-    # modelo
+    # model
     as.character(n_triplets_evaluados),
     as.character(n_positivos),
     as.character(n_negativos),
-    # capa S
+    # layer S
     as.character(n_nodos_S),
     as.character(uniqueN(drug_gene$gene_symbol)),
     as.character(n_aristas_S),
-    # soporte biológico
+    # biological support
     as.character(n_con_soporte_bio),
     sprintf("%.2f %%", pct_soporte_bio),
     sprintf("%.4f", mean_jaccard_obs),
@@ -718,7 +719,7 @@ dt_resumen_metricas <- data.table(
     # Fisher
     sprintf("%.3f", or_fisher),
     sprintf("%.2e", pval_fisher),
-    # OR ajustado
+    # adjusted OR
     sprintf("%.3f", or_adj_signal),
     sprintf("%.3f", ci_lo_adj_signal),
     sprintf("%.3f", ci_hi_adj_signal),
@@ -730,45 +731,45 @@ print(dt_resumen_metricas, row.names = FALSE, justify = "left")
 fwrite(dt_resumen_metricas, paste0(output_dir, "00_resumen_metricas_globales.csv"))
 
 ################################################################################
-# atributos
+# Graph attributes
 ################################################################################
 
-# nodos / vertices
-# asigno nombre de fármacos a nodos mapeando desde drug_names_map
+# nodes / vertices
+# assign drug names to nodes by looking up drug_names_map
 V(graph_stat_ddi)$drug_name <- drug_names_map[V(graph_stat_ddi)$name, drug_name]
-# asigno atc group con mismo mapeo
+# assign ATC group using the same lookup
 V(graph_stat_ddi)$atc_group <- drug_names_map[V(graph_stat_ddi)$name, atc_group]
-# asigno conectividad entre nodos
+# assign node degree in layer S
 V(graph_stat_ddi)$degree_s  <- vec_degree_stat
 
-# ordeno grupos atc
+# sort ATC groups for consistent color ordering
 vec_atc_levels <- sort(unique(V(graph_stat_ddi)$atc_group))
-# paleta de colores para atc
+# color palette for ATC groups
 pal_atc <- setNames(
   colorRampPalette(brewer.pal(min(8, length(vec_atc_levels)), "Set2"))(length(vec_atc_levels)),
   vec_atc_levels
 )
-# asigno colores
+# assign node colors by ATC group
 V(graph_stat_ddi)$color_node <- pal_atc[V(graph_stat_ddi)$atc_group]
 
 ################################################################################
-# visualización en circulo
+# Circular layout visualization
 ################################################################################
 
-# filtro red estadística para visualizar solo pares con soporte genético (Jaccard > 0)
+# restrict the statistical network to pairs with genetic support (Jaccard > 0)
 vec_nodes_bio <- unique(c(dt_edge_metrics[jaccard > 0, drugA], dt_edge_metrics[jaccard > 0, drugB]))
 graph_bio_support <- induced_subgraph(graph_stat_ddi, vids = vec_nodes_bio)
 
-# selección de los 100 nodos principales por grado de conectividad para reducir densidad visual
+# retain only the top 100 nodes by degree to reduce visual density
 vec_degree_bio <- degree(graph_bio_support)
 vec_top100_bio <- names(sort(vec_degree_bio, decreasing = TRUE))[1:min(100, length(vec_degree_bio))]
 graph_bio_support <- induced_subgraph(graph_bio_support, vids = vec_top100_bio)
 vec_degree_bio <- degree(graph_bio_support)
 
-# parametrización de etiquetas mostrando solo fármacos en el cuartil superior de conectividad
+# show labels only for drugs in the top connectivity quartile
 val_label_thr <- quantile(vec_degree_bio, 0.75)
 vec_labels_bio <- ifelse(vec_degree_bio >= val_label_thr, V(graph_bio_support)$drug_name, NA_character_)
-# escalado dinámico del tamaño de fuente según el grado 
+# dynamically scale font size by degree
 vec_text_sizes <- rescale(pmax(vec_degree_bio - val_label_thr + 1, 0), to = c(2.8, 5.5))
 
 mat_coords <- layout_in_circle(graph_bio_support) * 0.40
@@ -787,7 +788,7 @@ plot_circle <- ggraph(as_tbl_graph(graph_bio_support), layout = "manual", x = ma
 ggsave(paste0(output_dir, "fig_01_circle_bio.png"), plot_circle, width = 15, height = 15, dpi = 300)
 
 ################################################################################
-# barras con hubs
+# Hub bar chart
 ################################################################################
 
 dt_hub_drugs <- data.table(
@@ -807,97 +808,97 @@ plot_hubs <- ggplot(dt_hub_drugs, aes(x = reorder(drug_name, degree), y = degree
 ggsave(paste0(output_dir, "fig_04_hubs_bar.png"), plot_hubs, width = 12, height = 10, dpi = 300)
 
 ################################################################################
-# visualización droga-gen
+# Drug-gene visualization
 ################################################################################
 
-# Parámetros visuales
-v_n_drugs <- 50    # Top drogas de la red
-v_n_genes <- 5     # Top genes a evaluar
+# Visual parameters
+v_n_drugs <- 50    # Top drugs from the network
+v_n_genes <- 5     # Top genes to evaluate
 
-# selecciona las v_n_drugs drogas con mayor grado en la red estadística
+# select the v_n_drugs drugs with highest degree in the statistical network
 vec_top_drugs <- names(head(sort(vec_degree_stat, decreasing = TRUE), v_n_drugs))
 
-# para cada gen, cuenta cuántas drogas del top lo tienen; ordena de mayor a menor
+# for each gene, count how many top drugs carry it; sort descending
 genes_in_sub <- dt_edges_bio[from %in% vec_top_drugs, .N, by = to][order(-N)]
-# conserva solo los v_n_genes genes más frecuentes entre las drogas top
+# keep only the v_n_genes most frequent genes among the top drugs
 vec_top_genes <- head(genes_in_sub$to, v_n_genes)
 
-# aristas DDI cuyo from y to son ambos drogas del top (red inducida)
+# DDI edges where both endpoints are top drugs (induced subgraph)
 dt_edges_dd <- dt_edges_stat[from %in% vec_top_drugs & to %in% vec_top_drugs, .(from, to)]
-# canonicaliza cada arista para que from < to y evitar duplicados dirigidos
+# canonicalize each edge so from < to, avoiding directed duplicates
 dt_edges_dd[, `:=`(from = pmin(from, to), to = pmax(from, to))]
-# elimina aristas duplicadas tras la canonicalización
+# remove duplicate edges after canonicalization
 dt_edges_dd <- unique(dt_edges_dd)
 
-# tabla de nodos con nombre legible y grado de conectividad
+# node table with readable names and connectivity degree
 dt_nodes_dd <- data.table(name = vec_top_drugs)
 dt_nodes_dd[, drug_name := drug_names_map[match(name, drug_names_map$atc_concept_id), drug_name]]
 dt_nodes_dd[, degree := vec_degree_stat[name]]
 
-# construye el grafo igraph no dirigido sobre drogas top con sus aristas DDI
+# build the undirected igraph over top drugs with their DDI edges
 g_base <- graph_from_data_frame(dt_edges_dd, directed = FALSE, vertices = dt_nodes_dd)
 
-# calcula coordenadas de layout "stress" una sola vez (base fija para todos los subplots)
+# compute "stress" layout coordinates once (fixed base for all subplots)
 lay_coords <- create_layout(g_base, layout = "stress")[, c("x", "y")]
 
-# paleta Set1: un color distinto por gen para identidad visual unívoca
+# Set1 palette: one distinct color per gene for unambiguous visual identity
 gene_colors <- setNames(brewer.pal(max(3, length(vec_top_genes)), "Set1")[1:length(vec_top_genes)], vec_top_genes)
 
-# lista vacía que acumulará un ggraph por gen
+# empty list to accumulate one ggraph plot per gene
 list_plots <- list()
 
-# itera subplot por cada uno de los top genes
+# iterate one subplot per top gene
 for (current_gene in vec_top_genes) {
   
-  # drogas del top que están asociadas al gen actual en la capa biológica
+  # top drugs that are associated with the current gene in the biological layer
   drugs_with_gene <- dt_edges_bio[to == current_gene & from %in% vec_top_drugs, from]
   
-  # lista de aristas del grafo base como data.frame para filtrado lógico
+  # edge list of the base graph as data.frame for logical filtering
   edges_df <- as.data.frame(as_edgelist(g_base))
   colnames(edges_df) <- c("from", "to")
-  # arista "soportada" = ambos extremos comparten el gen actual
+  # an edge is "supported" if both endpoints carry the current gene
   is_supported <- (edges_df$from %in% drugs_with_gene) & (edges_df$to %in% drugs_with_gene)
   
-  # copia temporal del grafo base para asignar atributos específicos de este gen
+  # temporary copy of the base graph to assign gene-specific attributes
   g_temp <- g_base
-  # marca cada arista como soportada o no por este gen
+  # mark each edge as supported or not by this gene
   E(g_temp)$is_supported <- is_supported
-  # marca cada nodo según si su droga tiene el gen actual en su perfil genético
+  # mark each node based on whether the drug has the current gene in its profile
   V(g_temp)$has_gene <- V(g_temp)$name %in% drugs_with_gene
   
-  # inyecta las coordenadas fijas en el layout del grafo temporal
+  # inject fixed coordinates into the temporary graph layout
   lay_gene <- create_layout(g_temp, layout = "manual", x = lay_coords$x, y = lay_coords$y)
   
-  # color del gen actual (extraído de la paleta)
+  # color for the current gene (from palette)
   color_gene <- gene_colors[current_gene]
   
-  # ggraph para gen
+  # ggraph subplot for this gene
   p <- ggraph(lay_gene) +
-    # aristas sin soporte: fondo gris tenue para preservar estructura global
+    # unsupported edges: faint grey background to preserve global structure
     geom_edge_link0(
       aes(filter = !is_supported),
       color = "grey", width = 0.3, alpha = 0.6
     ) +
-    # aristas soportadas por el gen: resaltadas en el color del gen
+    # supported edges: highlighted in the gene's color
     geom_edge_link0(
       aes(filter = is_supported),
       color = color_gene, width = 0.6, alpha = 0.6
     ) +
-    # nodos: tamaño proporcional al grado; relleno según si tienen el gen
+    # nodes: size proportional to degree; fill based on gene presence
     geom_node_point(
       aes(size = degree, fill = has_gene),
       shape = 21, stroke = 0.6, color = "#2C3E50"
     ) +
-    # etiquetas con repulsión solo para nodos que tienen el gen actual
+    # repelled labels only for nodes that carry the current gene
     ggrepel::geom_text_repel(
       aes(x = x, y = y, label = ifelse(has_gene, drug_name, "")),
       size = 5, fontface = "bold", color = "#2C3E50",
       bg.color = "white", bg.r = 0.15,
       max.overlaps = 50, segment.color = "#BDC3C7", segment.size = 0.3
     ) +
-    # relleno binario: gris claro = sin gen, color del gen = con gen
+    # binary fill: light grey = no gene, gene color = has gene
     scale_fill_manual(values = c("FALSE" = "#ECF0F1", "TRUE" = color_gene)) +
-    # tamaño de nodo continuo; se oculta la leyenda para no saturar el panel
+    # continuous node size; legend suppressed to avoid panel clutter
     scale_size_continuous(range = c(5, 15), guide = "none") +
     theme_graph(base_family = "sans") +
     theme(
@@ -906,19 +907,19 @@ for (current_gene in vec_top_genes) {
       plot.subtitle = element_text(size = 10, color = "#7F8C8D")
     ) 
   
-  # exporta cada subplot
+  # export each subplot
   ggsave(paste0(output_dir, "fig_07_gene_", current_gene, ".png"), p,
          width = 14, height = 14, dpi = 300)
   
-  # acumula en la lista para el ensamblado posterior con patchwork
+  # accumulate in list for later assembly with patchwork
   list_plots[[current_gene]] <- p
 }
 
 ################################################################################
-# Sankey
+# Sankey diagram
 ################################################################################
 
-# capa estadística como tabla para iteración
+# statistical layer as a table for iteration
 g_S <- graph_stat_ddi
 top_ids <- vec_top_drugs
 
@@ -926,67 +927,67 @@ positive_edges <- as.data.table(as_edgelist(g_S, names = TRUE))
 names(positive_edges) <- c("drugA", "drugB")
 positive_edges[, edge_id := .I]
 
-# identificación de genes compartidos por pares con señal detectada
+# identify shared genes for each drug pair with a detected signal
 gene_bridge_dt <- rbindlist(lapply(positive_edges$edge_id, function(idx) {
   dA <- positive_edges[edge_id == idx, drugA]
   dB <- positive_edges[edge_id == idx, drugB]
   
-  # perfiles de asociación fármaco-droga para cada componente del par
+  # drug-gene association profiles for each component of the pair
   genesA <- drug_gene[atc_concept_id == dA, gene_symbol]
   genesB <- drug_gene[atc_concept_id == dB, gene_symbol]
   
-  # intersección. sustrato molecular común en la interacción
+  # intersection: shared molecular substrate underlying the interaction
   common <- intersect(genesA, genesB)
   data.table(drugA = dA, drugB = dB, gene_symbol = common)
 }))
 
 gene_counts <- gene_bridge_dt[, .(n_ddis = .N), by = gene_symbol][order(-n_ddis)]
 
-# Filtramos las conexiones droga-gen que involucran a estas drogas top
+# Filter drug-gene connections involving the top drugs
 sankey_links_dt <- rbind(
   gene_bridge_dt[drugA %in% top_ids, .(drug = drugA, gene = gene_symbol)],
   gene_bridge_dt[drugB %in% top_ids, .(drug = drugB, gene = gene_symbol)]
 )
 
-# pesos: cantidad de señales DDI que esta droga tiene mediadas por este gen
+# weights: number of DDI signals for this drug mediated by this gene
 sankey_links_dt <- sankey_links_dt[, .(weight = .N), by = .(drug, gene)]
 sankey_links_dt[, drug_name := drug_names_map[drug, drug_name]]
 
-# Limpiar casos donde no hay gen (si las hay)
+# Remove entries with missing drug name or gene (redundant)
 sankey_links_dt <- sankey_links_dt[!is.na(drug_name) & !is.na(gene)]
 
-# Nodos del Sankey: drogas (izquierda) y genes (derecha)
+# Sankey nodes: drugs (left) and genes (right)
 node_labels <- unique(c(sankey_links_dt$drug_name, sankey_links_dt$gene))
 node_df <- data.frame(name = node_labels)
 
-# índices
+# 0-based indices for networkD3 compatibility (not used in final script)
 sankey_links_dt$source <- match(sankey_links_dt$drug_name, node_labels) - 1
 sankey_links_dt$target <- match(sankey_links_dt$gene, node_labels) - 1
 
-# filtro top 15
+# top 15 filter
 top_n_static <- 15
 
-# top 15 fármacos y genes basados en el volumen de conexiones (pesos)
+# top 15 drugs and genes by total connection weight
 top_drugs_static <- sankey_links_dt[, .(total = sum(weight)), by = drug_name][order(-total)][1:min(top_n_static, .N), drug_name]
 top_genes_static <- sankey_links_dt[, .(total = sum(weight)), by = gene][order(-total)][1:min(top_n_static, .N), gene]
 
-# Subconjunto de datos para el plot estático
+# Subset for the static plot
 static_sankey_dt <- sankey_links_dt[drug_name %in% top_drugs_static & gene %in% top_genes_static]
 
-# sankey estático
+# static Sankey plot
 p_static_sankey <- ggplot(static_sankey_dt, 
                           aes(axis1 = drug_name, axis2 = gene, y = weight)) +
-  # Las cintas (flujos)
+  # Ribbons (flows)
   geom_alluvium(aes(fill = drug_name), alpha = 0.65, curve_type = "cubic", width = 0.2) +
-  # Las cajas (nodos)
+  # Boxes (nodes)
   geom_stratum(fill = "#ECF0F1", color = "#2C3E50", width = 0.2, linewidth = 0.8) +
-  # Los textos de los nodos
+  # Node labels
   geom_text(stat = "stratum", aes(label = after_stat(stratum)),
             size = 3.8, fontface = "bold", color = "#2C3E50") +
-  # Escalas y ejes
+  # Axis labels
   scale_x_discrete(limits = c("Fármacos (Top 15)", "Farmacogenes (Top 15)"), 
                    expand = c(0.15, 0.15)) +
-  # Paleta de colores vibrante para los flujos
+  # Vibrant color palette for flows
   scale_fill_viridis_d(option = "turbo", guide = "none") + 
   theme_minimal(base_family = "sans") +
   theme(
@@ -1004,10 +1005,10 @@ ggsave(paste0(output_dir, "fig_03b_sankey_static.png"),
        p_static_sankey, width = 12, height = 10, dpi = 300)
 
 ################################################################################
-# Comparación TWOSIDES
+# TWOSIDES comparison
 ################################################################################
 
-# cargo dataset twosides 
+# load TWOSIDES dataset
 dt_twosides <- fread(ruta_twosides)
 setnames(dt_twosides, tolower(names(dt_twosides)))
 setnames(dt_twosides, "drug_1_rxnorn_id", "drug_1_rxnorm_id", skip_absent = TRUE)
@@ -1018,15 +1019,15 @@ dt_twosides[, rxnorm2 := as.character(drug_2_rxnorm_id)]
 dt_rel <- fread(ruta_rel, quote = "", colClasses = list(character = c("concept_id_1", "concept_id_2")))
 dt_rel[, relationship_id := tolower(relationship_id)]
 
-# extraigo ingredientes RxNorm
+# extract RxNorm ingredient concepts
 dt_rxnorm <- concept[vocabulary_id == "rxnorm" & concept_class_id == "ingredient",
                      .(concept_id = as.character(concept_id), rxnorm_code = as.character(concept_code))]
 
-# mapeo usando el vocabulario OMOP. de ATC a RxNorm ingredient
+# map ATC to RxNorm ingredient via the OMOP relationship vocabulary
 vec_rel_ids <- c("atc - rxnorm", "atc - rxnorm pr lat", "atc - rxnorm eq", "atc - rxnorm sec", "maps to", "subsumes")
 dt_atc_to_rxnorm <- dt_rel[relationship_id %in% vec_rel_ids]
 
-# Mapeo por OMOP vocabulary y coincidencia de nombres
+# Primary mapping: via OMOP vocabulary relationships
 dt_raw_map <- dt_atc_to_rxnorm[atc_concepts, on = .(concept_id_1 = concept_id), nomatch = 0][
   dt_rxnorm, on = .(concept_id_2 = concept_id), nomatch = 0,
   .(atc_concept_id = as.character(concept_id_1), rxnorm_id = rxnorm_code)
@@ -1041,7 +1042,7 @@ dt_map_name <- merge(drug_names_map, dt_rxnorm_names, by = "drug_name")[, .(atc_
 
 dt_mapping <- unique(rbind(dt_map_omop, dt_map_name))
 
-# Filtro interacciones de twosides con punto de corte significativo (PRR > 2)
+# Filter TWOSIDES interactions to those exceeding significance threshold (PRR > 2)
 dt_tw_sig <- dt_twosides[prr > 2 & !is.na(rxnorm1) & !is.na(rxnorm2)]
 dt_tw_pairs <- unique(dt_tw_sig[, .(pair_key = paste(pmin(rxnorm1, rxnorm2), pmax(rxnorm1, rxnorm2), sep = "__"))])
 dt_tw_pairs[, in_twosides := TRUE]
@@ -1049,7 +1050,7 @@ setkey(dt_tw_pairs, pair_key)
 rm(dt_tw_sig, dt_twosides); gc()
 
 ################################################################################
-# Comparación Univariada de Pares Mapeados
+# Univariate comparison of mapped pairs
 ################################################################################
 
 vec_drugs_pos <- unique(c(as.character(positives$drugA), as.character(positives$drugB)))
@@ -1059,7 +1060,8 @@ dt_pos_strong <- unique(positives[, .(atc_A = as.character(pmin(drugA, drugB)), 
 dt_map_A <- dt_map_sub[, .(atc_A = as.character(atc_concept_id), rxnormA = rxnorm_id)]
 dt_map_B <- dt_map_sub[, .(atc_B = as.character(atc_concept_id), rxnormB = rxnorm_id)]
 
-# Cruzar mapeos de cada fármaco y definir key
+# Cross drug mappings and define pair key
+# allow.cartesian is intentional: one ATC may map to multiple RxNorm ids
 dt_pos_mapped <- merge(dt_pos_strong, dt_map_A, by = "atc_A", all.x = TRUE, allow.cartesian = TRUE)
 dt_pos_mapped <- merge(dt_pos_mapped, dt_map_B, by = "atc_B", all.x = TRUE, allow.cartesian = TRUE)
 dt_pos_mapped <- dt_pos_mapped[!is.na(rxnormA) & !is.na(rxnormB)]
@@ -1068,7 +1070,7 @@ setkey(dt_pos_mapped, pair_key)
 
 n_mapped_unique <- uniqueN(dt_pos_mapped[, .(atc_A, atc_B)])
 
-# limito twosides a las interacciones que se cruzan
+# restrict TWOSIDES to the overlapping drug universe
 vec_my_rxnorm <- unique(c(dt_pos_mapped$rxnormA, dt_pos_mapped$rxnormB))
 dt_tw_restricted <- dt_tw_pairs[, c("r1", "r2") := tstrsplit(pair_key, "__", fixed = TRUE)][r1 %in% vec_my_rxnorm & r2 %in% vec_my_rxnorm]
 dt_tw_restricted[, c("r1", "r2") := NULL]
@@ -1077,7 +1079,7 @@ dt_rxnorm_pairs <- unique(dt_pos_mapped[, .(pair_key)])
 dt_rxnorm_pairs[, in_my_model := TRUE]
 setkey(dt_rxnorm_pairs, pair_key)
 
-# Evaluación Comparativa
+# Comparative evaluation
 dt_comp <- merge(dt_rxnorm_pairs, dt_tw_restricted, by = "pair_key", all = TRUE)
 dt_comp[, status := fcase(
   in_my_model == TRUE & in_twosides == TRUE, "Concordante",
@@ -1085,16 +1087,18 @@ dt_comp[, status := fcase(
   is.na(in_my_model) & in_twosides == TRUE, "Solo TWOSIDES"
 )]
 
-# clasificación de pares para matriz de confusión vs TWOSIDES
+# set-overlap classification of pairs vs TWOSIDES
+# Note: TWOSIDES contains only positive signals, so TN is epistemologically undefined;
+# "Nuevo" (FP-like) and "Solo TWOSIDES" (FN-like) reflect set differences, not errors per se
 val_tp <- sum(dt_comp$status == "Concordante", na.rm = TRUE)
 val_fp <- sum(dt_comp$status == "Nuevo", na.rm = TRUE)
 val_fn <- sum(dt_comp$status == "Solo TWOSIDES", na.rm = TRUE)
-# cálculo de indicadores estadísticos de la red
+# derived performance-style indicators for reporting
 val_prec <- val_tp / max(val_tp + val_fp, 1)
 val_rec <- val_tp / max(val_tp + val_fn, 1)
 val_f1 <- ifelse(val_prec + val_rec > 0, 2 * val_prec * val_rec / (val_prec + val_rec), 0)
 
-# Exportar tabla unificada detallada
+# Export unified detailed table
 dt_comp_details <- merge(dt_comp, unique(dt_pos_mapped[, .(pair_key, atc_A, atc_B)]), by = "pair_key", all.x = TRUE)
 dt_comp_details <- merge(dt_comp_details, drug_names_map[, .(atc_A = as.character(atc_concept_id), name_A = drug_name)], by = "atc_A", all.x = TRUE)
 dt_comp_details <- merge(dt_comp_details, drug_names_map[, .(atc_B = as.character(atc_concept_id), name_B = drug_name)], by = "atc_B", all.x = TRUE)
@@ -1103,7 +1107,7 @@ fwrite(dt_comp_details, paste0(output_dir, "twosides_comparison_positives.csv"))
 fwrite(unique(dt_comp_details[status == "Nuevo", .(atc_A, atc_B, name_A, name_B)]), paste0(output_dir, "seniales_novedosas_pares.csv"))
 
 ################################################################################
-# Resumen de métricas
+# Metrics summary
 ################################################################################
 
 dt_metrics_summary <- data.table(
@@ -1121,10 +1125,10 @@ print(dt_metrics_summary)
 fwrite(dt_metrics_summary, paste0(output_dir, "metrics_versus_twosides.csv"))
 
 ################################################################################
-# Pares novedosos con sustento biológico
+# Novel pairs with biological support
 ################################################################################
 
-# Pares novedosos (no en TWOSIDES) con al menos 1 gen compartido
+# Novel pairs (not in TWOSIDES) that share at least 1 gene
 novel_bio <- merge(
   dt_comp_details[status == "Nuevo", .(atc_A, atc_B, name_A, name_B)],
   dt_edge_metrics[n_shared > 0, .(
@@ -1139,7 +1143,7 @@ novel_bio <- merge(
 message(sprintf("Pares novedosos con sustento biológico: %d", nrow(novel_bio)))
 print(novel_bio)
 
-# Para cada par novedoso ver que tripletes lo detectaron
+# For each novel pair, identify which triplets drove the detection
 novel_pairs_ids <- novel_bio[, .(atc_A, atc_B)]
 
 triplets_novel <- merge(
@@ -1159,14 +1163,14 @@ meddra_names[, meddra := as.character(meddra)]
 
 triplets_novel <- merge(triplets_novel, meddra_names, by = "meddra", all.x = TRUE)
 
-# nombres de drogas y evento MedDRA
+# resolve drug and MedDRA event names
 triplets_novel <- merge(triplets_novel, drug_names_map[, .(atc_A = as.character(atc_concept_id), name_A = drug_name)], by = "atc_A", all.x = TRUE)
 triplets_novel <- merge(triplets_novel, drug_names_map[, .(atc_B = as.character(atc_concept_id), name_B = drug_name)], by = "atc_B", all.x = TRUE)
 
 triplets_novel <- triplets_novel[order(name_A, name_B, -n_stages_positive)]
 print(triplets_novel[, .(name_A, name_B, meddra_name, n_stages_positive, triplet_id)])
 
-# Para cada par novedoso qué genes compartidos hay
+# For each novel pair, retrieve the specific shared gene symbols
 shared_genes_novel <- rbindlist(lapply(seq_len(nrow(novel_bio)), function(i) {
   id_A <- novel_bio$atc_A[i]
   id_B <- novel_bio$atc_B[i]
@@ -1183,7 +1187,7 @@ shared_genes_novel <- rbindlist(lapply(seq_len(nrow(novel_bio)), function(i) {
 
 print(shared_genes_novel[order(name_A, name_B)])
 
-# merge para ver par tripletes y genes
+# merge to combine triplet-level and gene-level information per novel pair
 novel_summary <- merge(
   triplets_novel[, .(name_A, name_B, meddra_name, n_stages_positive)],
   shared_genes_novel[, .(
@@ -1194,14 +1198,14 @@ novel_summary <- merge(
 
 print(novel_summary)
 
-# Exportar
+# Export
 fwrite(novel_bio, paste0(output_dir, "novel_pairs_with_bio_support.csv"))
 fwrite(triplets_novel, paste0(output_dir, "novel_pairs_triplets.csv"))
 fwrite(shared_genes_novel, paste0(output_dir, "novel_pairs_shared_genes.csv"))
 fwrite(novel_summary, paste0(output_dir, "novel_pairs_full_summary.csv"))
 
 ################################################################################
-# Tripletes concordantes con TWOSIDES + sustento biológico
+# Concordant triplets (TWOSIDES) with biological support
 ################################################################################
 
 concordant_pairs_ids <- dt_comp_details[
@@ -1209,7 +1213,7 @@ concordant_pairs_ids <- dt_comp_details[
   .(atc_A, atc_B, name_A, name_B)
 ]
 
-# soporte biológico desde dt_edge_metrics (Jaccard + n_shared ya calculados)
+# biological support from dt_edge_metrics (Jaccard + n_shared already computed)
 concordant_bio <- merge(
   concordant_pairs_ids,
   dt_edge_metrics[, .(
@@ -1219,10 +1223,10 @@ concordant_bio <- merge(
     jaccard
   )],
   by = c("atc_A", "atc_B"),
-  all.x = TRUE   # conserva pares sin genes compartidos (n_shared = 0 / jaccard = 0)
+  all.x = TRUE    # keep concordant pairs with no shared genes (n_shared = 0 / jaccard = 0)
 )[order(-n_shared_genes)]
 
-# Genes compartidos concretos (símbolos) para cada par concordante
+# Shared gene symbols for each concordant pair
 shared_genes_concordant <- rbindlist(lapply(seq_len(nrow(concordant_bio)), function(i) {
   id_A <- concordant_bio$atc_A[i]
   id_B <- concordant_bio$atc_B[i]
@@ -1237,7 +1241,7 @@ shared_genes_concordant <- rbindlist(lapply(seq_len(nrow(concordant_bio)), funct
   )
 }))
 
-# Tripletes positivos para esos pares (con evento MedDRA)
+# Positive triplets for those pairs (with MedDRA event)
 triplets_concordant <- merge(
   concordant_pairs_ids,
   positives[, .(
@@ -1254,14 +1258,14 @@ triplets_concordant[, meddra := as.character(meddra)]
 triplets_concordant <- merge(triplets_concordant, meddra_names, by = "meddra", all.x = TRUE)
 triplets_concordant <- triplets_concordant[order(name_A, name_B, -n_stages_positive)]
 
-# Resumen unificado: par + evento + genes colapsados en una fila
+# Unified summary: pair + event + collapsed gene list per row
 concordant_summary <- merge(
   triplets_concordant[, .(name_A, name_B, meddra_name, n_stages_positive)],
   shared_genes_concordant[, .(
     genes = paste(shared_gene, collapse = ", ")
   ), by = .(name_A, name_B)],
   by = c("name_A", "name_B"),
-  all.x = TRUE                   # pares sin genes compartidos quedan con genes = NA
+  all.x = TRUE                  # pairs with no shared genes will have genes = NA
 )[order(name_A, name_B, -n_stages_positive)]
 
 message(sprintf(
@@ -1274,35 +1278,35 @@ message(sprintf(
 print(concordant_bio)
 print(concordant_summary)
 
-# Exportar
+# Export
 fwrite(concordant_bio, paste0(output_dir, "concordant_pairs_bio_support.csv"))
 fwrite(shared_genes_concordant, paste0(output_dir, "concordant_pairs_shared_genes.csv"))
 fwrite(triplets_concordant, paste0(output_dir, "concordant_pairs_triplets.csv"))
 fwrite(concordant_summary, paste0(output_dir, "concordant_pairs_full_summary.csv"))
 
 ################################################################################
-# Concordancia a nivel de TRIPLETES droga-droga-evento vs TWOSIDES
+# Triplet-level concordance (drug-drug-event) vs TWOSIDES
 ################################################################################
 
-# mapeo MedDRA: OMOP concept_id a código MedDRA nativo
+# MedDRA mapping: OMOP concept_id to native MedDRA code
 dt_meddra_code_map <- concept[
   vocabulary_id == "meddra",
   .(meddra_omop = as.character(concept_id),
     meddra_code = as.character(concept_code))
 ]
 
-# tripletes evaluados (positivos + negativos) RxNorm + MedDRA
+# all evaluated triplets (positive + negative) with RxNorm + MedDRA ids
 dt_all_trips <- all_triplets_results[model_success == TRUE, .(
   atc_A = as.character(pmin(drugA, drugB)),
   atc_B = as.character(pmax(drugA, drugB)),
   meddra_omop = as.character(meddra)
 )]
 
-# para evitar duplicados elijo un solo RxNorm por droga 
+# to avoid duplicates, select one RxNorm id per drug
 dt_map_A_trip <- dt_mapping[, .(rxnormA = rxnorm_id[1L]), by = .(atc_A = as.character(atc_concept_id))]
 dt_map_B_trip <- dt_mapping[, .(rxnormB = rxnorm_id[1L]), by = .(atc_B = as.character(atc_concept_id))]
 
-# merge 
+# merge drug and event mappings
 dt_all_trips <- merge(dt_all_trips, dt_map_A_trip, by = "atc_A", all.x = TRUE)
 dt_all_trips <- merge(dt_all_trips, dt_map_B_trip, by = "atc_B", all.x = TRUE)
 dt_all_trips <- merge(dt_all_trips, dt_meddra_code_map, by = "meddra_omop", all.x = TRUE)
@@ -1315,7 +1319,7 @@ dt_all_trips <- unique(dt_all_trips[, .(
   atc_A, atc_B, meddra_omop, meddra_code, rxnormA, rxnormB, triplet_key
 )])
 
-# marco positivos
+# flag positive triplets
 dt_pos_keys <- unique(positives[, .(
   atc_A = as.character(pmin(drugA, drugB)),
   atc_B = as.character(pmax(drugA, drugB)),
@@ -1326,7 +1330,7 @@ dt_pos_keys[, is_positive := TRUE]
 dt_all_trips <- merge(dt_all_trips, dt_pos_keys, by = c("atc_A", "atc_B", "meddra_omop"), all.x = TRUE)
 dt_all_trips[is.na(is_positive), is_positive := FALSE]
 
-# Reporte de mapeo
+# Mapping report
 n_total_eval <- uniqueN(all_triplets_results[model_success == TRUE,
                             paste(pmin(drugA, drugB), pmax(drugA, drugB), meddra)])
 n_total_pos <- uniqueN(positives[, paste(pmin(drugA, drugB), pmax(drugA, drugB), meddra)])
@@ -1341,7 +1345,7 @@ message(sprintf("  Tripletes positivos totales: %d", n_total_pos))
 message(sprintf("  Tripletes positivos mapeados: %d (%.1f%%)",
                 n_mapped_pos, 100 * n_mapped_pos / max(n_total_pos, 1)))
 
-# cargo twosides
+# load TWOSIDES triplet-level dataset
 dt_twosides_trip <- fread(ruta_twosides)
 setnames(dt_twosides_trip, tolower(names(dt_twosides_trip)))
 setnames(dt_twosides_trip, "drug_1_rxnorn_id", "drug_1_rxnorm_id", skip_absent = TRUE)
@@ -1350,7 +1354,7 @@ dt_twosides_trip[, rxnorm1 := as.character(drug_1_rxnorm_id)]
 dt_twosides_trip[, rxnorm2 := as.character(drug_2_rxnorm_id)]
 dt_twosides_trip[, meddra_code_tw := as.character(condition_meddra_id)]
 
-# filtro significativos según litratura
+# filter to significant TWOSIDES entries per literature threshold
 dt_tw_sig <- dt_twosides_trip[
   prr > 2 & !is.na(rxnorm1) & !is.na(rxnorm2) & !is.na(meddra_code_tw)
 ]
@@ -1358,8 +1362,8 @@ dt_tw_sig[, triplet_key := paste(
   pmin(rxnorm1, rxnorm2), pmax(rxnorm1, rxnorm2), meddra_code_tw, sep = "__"
 )]
 
-# Universo observable: drogas y eventos presentes en AMBOS datasets
-# Se define desde todos los evaluados (no solo positivos)
+# Observable universe: drugs and events present in BOTH datasets
+# Defined from all evaluated triplets (not just positives)
 vec_drugs_mine <- unique(c(dt_all_trips$rxnormA, dt_all_trips$rxnormB))
 vec_drugs_tw<- unique(c(dt_tw_sig$rxnorm1, dt_tw_sig$rxnorm2))
 vec_drugs_shared <- intersect(vec_drugs_mine, vec_drugs_tw)
@@ -1378,15 +1382,15 @@ message(sprintf("  Eventos GAM: %d | TWOSIDES: %d | compartidos: %d (%.1f%% / %.
                 100 * length(vec_events_shared) / max(length(vec_events_mine), 1),
                 100 * length(vec_events_shared) / max(length(vec_events_tw), 1)))
 
-# Filtro a universo compartido
-# para GAM ambas drogas y evento dentro del universo compartido
+# Restrict to shared observable universe
+# GAM: both drugs and event must be within the shared universe
 dt_eval_obs <- dt_all_trips[
   rxnormA %in% vec_drugs_shared &
   rxnormB %in% vec_drugs_shared &
   meddra_code %in% vec_events_shared
 ]
 
-# mismo para TWOSIDES
+# same restriction for TWOSIDES
 dt_tw_obs <- dt_tw_sig[
   rxnorm1 %in% vec_drugs_shared &
   rxnorm2 %in% vec_drugs_shared &
@@ -1407,16 +1411,16 @@ message(sprintf(" TWOSIDES : %d (%.1f%% TWOSIDES significativos)",
 
 rm(dt_twosides_trip, dt_tw_sig); gc()
 
-# comparación de conjuntos
-set_pos <- unique(dt_eval_obs[is_positive == TRUE, triplet_key])  # positivos GAM
-set_neg <- unique(dt_eval_obs[is_positive == FALSE, triplet_key])  # negativos GAM
-set_tw <- unique(dt_tw_obs$triplet_key)       # positivos TWOSIDES
+# set-level comparison
+set_pos <- unique(dt_eval_obs[is_positive == TRUE, triplet_key])  # GAM positives
+set_neg <- unique(dt_eval_obs[is_positive == FALSE, triplet_key])  # GAM negatives
+set_tw <- unique(dt_tw_obs$triplet_key)       # TWOSIDES positives
 
-trip_tp <- length(intersect(set_pos, set_tw))   # positivo en ambos
-trip_fp <- length(setdiff(set_pos, set_tw))    # positivo solo en mi modelo (novedoso)
-trip_fn <- length(intersect(set_neg, set_tw))   # negativo en mi modelo, positivo en TWOSIDES
+trip_tp <- length(intersect(set_pos, set_tw))   # positive in both
+trip_fp <- length(setdiff(set_pos, set_tw))    # positive only in GAM (novel)
+trip_fn <- length(intersect(set_neg, set_tw))  # negative in GAM, positive in TWOSIDES (missed)
 
-# tabla
+# detailed comparison table
 dt_comp_detail <- unique(dt_eval_obs[, .(atc_A, atc_B, meddra_omop, meddra_code,
                                          triplet_key, is_positive)])
 dt_comp_detail[, in_twosides := triplet_key %in% set_tw]
@@ -1443,7 +1447,7 @@ dt_comp_detail <- merge(
   by.x = "meddra_omop", by.y = "meddra", all.x = TRUE
 )
 
-# resumen de métricas
+# concordance metrics summary
 dt_metrics_trips <- data.table(
   grupo = "triplets_universo_compartido",
   n_drugs_shared = length(vec_drugs_shared),
@@ -1461,7 +1465,7 @@ message(sprintf("  TP- Concordantes  : %d", trip_tp))
 message(sprintf("  FP- Novedosos (solo  GAM) : %d", trip_fp))
 message(sprintf("  FN- Perdidos  (negativo GAM, positivo TWOSIDES) : %d", trip_fn))
 print(dt_metrics_trips)
-# guardo 
+# export
 fwrite(dt_comp_detail, paste0(output_dir, "twosides_comparison_triplets.csv"))
 fwrite(dt_comp_detail[status_trip == "FP: Novedoso (solo GAM)"], paste0(output_dir, "seniales_novedosas_tripletes.csv"))
 fwrite(dt_comp_detail[status_trip == "FN: Perdido (negativo GAM, positivo TWOSIDES)"], paste0(output_dir, "seniales_perdidas_tripletes.csv"))
