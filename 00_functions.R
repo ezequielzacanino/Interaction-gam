@@ -449,7 +449,48 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     ))
   }
   
-  # 8- Flag reports that now carry the simulated event (injected)
+  # 8a- Change: (experimental) Validate that at least 1 injected event falls in high reporting stages
+  # for the intended dynamic.
+  # Reason: a nominally successful injection (n_injected >= 1) but with all
+  # events in low reporting stages generate a structural false negative
+  # the GAM cannot detect signal in the stages that the design intends to test.
+  # The failure here is different from a method failure; It is a failure of the injection itself.
+  high_stages_by_dynamic <- list(
+    "uniform" = 1:7,      # all relevant stages
+    "increase" = c(6L, 7L),
+    "decrease" = c(1L, 2L),
+    "plateau" = c(3L, 4L, 5L),
+    "inverse_plateau"  = c(1L, 7L)
+  )
+  
+  high_stages <- high_stages_by_dynamic[[dynamic_type]]
+  
+  n_injected_high <- injection_by_stage[nichd_num %in% high_stages, sum(N, na.rm = TRUE)]
+  #sum() on empty table returns NA, not 0
+  if (length(n_injected_high) == 0 || is.na(n_injected_high)) n_injected_high <- 0L
+  
+  diagnostics$n_injected_high <- n_injected_high
+  diagnostics$high_stages <- high_stages
+  diagnostics$n_injected_total <- length(reports_to_mark)
+  
+  if (n_injected_high == 0L) {
+    return(list(
+      success = FALSE,
+      injection_success = FALSE,
+      n_injected = length(reports_to_mark),
+      n_coadmin = length(reports_AB),
+      ade_aug = NULL,
+      message = sprintf(
+        "Inyección sin señal en etapas clave: 0 eventos en etapas %s (dinámica: %s, total inyectado: %d)",
+        paste(high_stages, collapse = ","),
+        dynamic_type,
+        length(reports_to_mark)
+      ),
+      diagnostics = c(diagnostics, list(reason = "zero_events_in_high_stages"))
+    ))
+  }
+
+  # 8b- Flag reports that now carry the simulated event (injected)
   ade_aug[
     safetyreportid %in% reports_to_mark,
     `:=`(
