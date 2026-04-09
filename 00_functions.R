@@ -15,7 +15,7 @@ set.seed(7113)
 # Load all pipeline libraries using pacman
 library(pacman)
 pacman::p_load(tidyverse, data.table, pbapply, parallel, doParallel, foreach,
-  mgcv, MASS, akima, doRNG, pROC, svglte, DHARMa,
+  mgcv, MASS, akima, doRNG, pROC, svglite, DHARMa,
   igraph, ggraph, tidygraph, scales, RColorBrewer, patchwork, graphlayouts, ggrepel, networkD33, htmlwidgets, ggalluvial)
 
 # NICHD stage level ordering used throughout all scripts
