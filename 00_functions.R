@@ -465,10 +465,14 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   
   high_stages <- high_stages_by_dynamic[[dynamic_type]]
   
-  n_injected_high <- injection_by_stage[nichd_num %in% high_stages, sum(N, na.rm = TRUE)]
+  injection_by_stage_temp <- target_reports[
+    safetyreportid %in% reports_to_mark, .N, by = nichd_num]
+  
+  n_injected_high <- injection_by_stage_temp[nichd_num %in% high_stages, sum(N, na.rm = TRUE)]
+  
   #sum() on empty table returns NA, not 0
   if (length(n_injected_high) == 0 || is.na(n_injected_high)) n_injected_high <- 0L
-  
+    
   diagnostics$n_injected_high <- n_injected_high
   diagnostics$high_stages <- high_stages
   diagnostics$n_injected_total <- length(reports_to_mark)
@@ -518,11 +522,7 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     n_without_event = nrow(target_reports[e_old == 0]),
     n_new_events = length(reports_to_mark),
     injection_rate = length(reports_to_mark) / nrow(target_reports[e_old == 0]),
-    injection_by_stage = target_reports[
-      safetyreportid %in% reports_to_mark, 
-      .N, 
-      by = nichd_num
-    ]
+    injection_by_stage = injection_by_stage_temp
   )
   
   return(list(
