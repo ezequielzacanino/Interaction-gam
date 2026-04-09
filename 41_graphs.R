@@ -1,5 +1,5 @@
 ################################################################################
-# Script de visualización de gráficos facetados
+# Faceted plot visualization script
 # Script: 41_graphs.R
 ################################################################################
 
@@ -8,14 +8,14 @@ source("00_functions.R", local = TRUE)
 output_dir <- paste0("./results/", suffix, "/metrics_results/")
 fig_output_dir <- paste0(output_dir, "facet_figures/")
 
-# Crea directorio de salida si no existe
+# Create output directory if it does not exist
 dir.create(fig_output_dir, showWarnings = FALSE, recursive = TRUE)
 
 ################################################################################
-# Preprocesamiento
+# Preprocessing
 ################################################################################
 
-# Traducción de etapas a español
+# Display labels for NICHD developmental stages
 nichd_labels <- c(
   "term_neonatal" = "Neonato a term.",
   "infancy" = "Lactante",
@@ -26,7 +26,7 @@ nichd_labels <- c(
   "late_adolescence" = "Adolescencia tardía"
 )
 
-# Etiquetas de métricas
+# Metric display labels
 metric_labels <- c(
   "AUC" = "AUC",
   "sensitivity" = "Sensibilidad",
@@ -36,7 +36,7 @@ metric_labels <- c(
   "F1" = "F1-Score"
 )
 
-# Etiquetas de dinámicas
+# Signal dynamic display labels
 dynamic_labels <- c(
   "uniform" = "Uniforme",
   "increase" = "Aumento",
@@ -45,7 +45,7 @@ dynamic_labels <- c(
   "inverse_plateau" = "Valle"
 )
 
-# Pares de métodos a comparar
+# Method pairs to compare (GAM vs. stratified, for IOR and RERI)
 method_pairs <- list(
   list(
     name = "IOR",
@@ -63,10 +63,10 @@ method_pairs <- list(
   )
 )
 
-# versiones de datasets a procesar
+# Dataset versions to process
 dataset_versions <- c("original", "filtered", "intersection")
 
-# Helper: título legible según versión
+# Helper: readable title for each dataset version
 version_title_label <- function(version) {
   switch(version,
     "original" = "Dataset Original",
@@ -76,7 +76,7 @@ version_title_label <- function(version) {
   )
 }
 
-# colores y linetypes según par de métodos
+# Build color and linetype scales for a given method pair
 make_scales <- function(pair) {
   list(
     color = setNames(c("#16A085", "#C0392B"), c(pair$gam, pair$classic)),
@@ -86,10 +86,10 @@ make_scales <- function(pair) {
 }
 
 ################################################################################
-# Gráfico de dinámicas
+# Dynamic pattern plot
 ################################################################################
 
-# Gráfico de funciones tangenciales por dinámica
+# Plot of tangential weight functions by signal dynamic type
 dt_dyn_plot <- rbindlist(lapply(
   c("increase", "decrease", "plateau", "inverse_plateau"),
   function(d) data.table(
@@ -125,7 +125,7 @@ ggsave(paste0(output_dir, "dynamics.png"), dynamics, width = 15, height = 15, dp
 
 
 ################################################################################
-# carga de datos
+# Data loading
 ################################################################################
 
 metrics_global <- list(
@@ -146,7 +146,7 @@ metrics_stage <- list(
   intersection = fread(paste0(output_dir, "metrics_stage_intersection.csv"))
 )
 
-# proceso columna method_type + factor nichd/dynamic
+# Add method_type column and convert nichd/dynamic to factors across all versions
 for (v in dataset_versions) {
   metrics_global[[v]][, method_type := ifelse(grepl("GAM", method), "GAM", "Estratificado")]
 
@@ -161,28 +161,31 @@ for (v in dataset_versions) {
 }
 
 ################################################################################
-# Preparación de datos para facetado
+# Data preparation for faceted plots
 ################################################################################
 
-# Prepara datos en formato largo para facetado
+# Reshape stage-level metrics from wide to long format for ggplot2 faceting.
 #
-# Convierte las métricas de formato ancho a largo
+# Filters the data to the two methods in the given pair, then pivots
+# all six performance metrics into a single long-format data.table.
 #
-# data.table con métricas por etapa
-# lista con información del par de métodos (gam, classic)
-# data.table en formato largo listo para ggplot2
+# Arguments:
+#  dt : data.table with per-stage metrics in wide format
+#  pair : list with method identifiers and display labels (gam, classic, etc.)
+#
+# Returns: long-format data.table ready for ggplot2
 
 prepare_facet_data <- function(dt, pair) {
-  # Filtrar solo los métodos del par actual
+  # Keep only the two methods belonging to this pair
   dt_filtered <- dt[method %in% c(pair$gam, pair$classic)]
-  # Métricas a incluir
+  # Metrics to include in the plot
   metrics <- c("AUC", "sensitivity", "specificity", "PPV", "NPV", "F1")
-  # Convertir a formato largo
+  # Pivot to long format, one row per method × stage × metric
   dt_long <- rbindlist(lapply(metrics, function(m) {
     lower_col <- paste0(m, "_lower")
     upper_col <- paste0(m, "_upper")
     
-    # veo que las columnas existan
+    # Skip metric if confidence interval columns are missing
     if (!(lower_col %in% names(dt_filtered)) || !(upper_col %in% names(dt_filtered))) {
       return(NULL)
     }
@@ -199,13 +202,13 @@ prepare_facet_data <- function(dt, pair) {
       upper = dt_filtered[[upper_col]]
     )
   }), use.names = TRUE)
-  # Crear etiqueta combinada de método
+  # Assign display label for each method
   dt_long[, method_label := ifelse(
     method == pair$gam,
     pair$gam_label,
     pair$classic_label
   )]
-  # Ordenar métricas
+  # Set metric factor order to match the desired panel sequence
   dt_long[, metric_label := factor(
     metric_label,
     levels = metric_labels
@@ -213,7 +216,7 @@ prepare_facet_data <- function(dt, pair) {
   return(dt_long)
 }
 
-# Convierte métricas de formato ancho a largo — por dinámica
+# Reshape dynamic-level metrics from wide to long format for faceting
 prepare_facet_data_dynamic <- function(dt, pair) {
   dt_filtered <- dt[method %in% c(pair$gam, pair$classic)]
   metrics <- c("AUC", "sensitivity", "specificity", "PPV", "NPV", "F1")
@@ -240,7 +243,7 @@ prepare_facet_data_dynamic <- function(dt, pair) {
   return(dt_long)
 }
 
-# Convierte métricas de formato ancho a largo globales (sin estratificación)
+# Reshape global (unstratified) metrics from wide to long format for faceting
 prepare_facet_data_global <- function(dt, pair) {
   dt_filtered <- dt[method %in% c(pair$gam, pair$classic)]
   metrics <- c("AUC", "sensitivity", "specificity", "PPV", "NPV", "F1")
@@ -267,17 +270,17 @@ prepare_facet_data_global <- function(dt, pair) {
 }
 
 ################################################################################
-# Función de generación de gráficos facetados
+# Faceted plot generation functions
 ################################################################################
 
-# Genera gráfico facetado de métricas por etapa
+# Generate faceted metric plot stratified by NICHD stage.
 #
-# Filas: métricas (sensibilidad, especificidad, PPV, NPV, F1)
-# Columnas: etapas NICHD
-# Eje X: reducción del dataset 
+# Layout: rows = metrics, columns = NICHD stages.
+# X-axis: dataset reduction percentage.
 #
-# pair: Información del par de métodos
-# version: nombre de la versión del dataset
+# Arguments:
+#   pair    : method pair metadata
+#   version : dataset version name (used for subtitle)
 
 plot_facet_metrics <- function(dt_long, pair, version) {
   
@@ -286,7 +289,7 @@ plot_facet_metrics <- function(dt_long, pair, version) {
     return(NULL)
   }
   
-  # Título según versión
+  # title based on dataset version
   version_title <- switch(version,
     "original" = "Dataset Original",
     "filtered" = "Dataset Filtrado por Poder",
@@ -340,7 +343,7 @@ plot_facet_metrics <- function(dt_long, pair, version) {
       breaks = seq(0, 1, by = 0.25),
       name = "Valor de la Métrica"
     ) +
-    # Títulos
+    # Titles
     labs(
       title = sprintf(
         "Métricas por Etapa - %s vs %s",
@@ -348,7 +351,7 @@ plot_facet_metrics <- function(dt_long, pair, version) {
       ),
       subtitle = version_title
     ) +
-    # Tema
+    # Theme
     theme_bw(base_size = 14) +
     theme(
       plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
@@ -372,11 +375,11 @@ plot_facet_metrics <- function(dt_long, pair, version) {
 }
 
 ################################################################################
-# Función principal de generación
+# Main plot generation function
 ################################################################################
 
-# Genera todos los gráficos facetados para todas las combinaciones
-# Itera sobre todas las versiones de datasets y pares de métodos
+# Generate all faceted stage-level plots across all dataset versions and method pairs.
+# This definition overrides the one above, consolidating logic via make_scales().
 
 plot_facet_metrics <- function(dt_long, pair, version) {
   if (is.null(dt_long) || nrow(dt_long) == 0) {
@@ -397,7 +400,7 @@ plot_facet_metrics <- function(dt_long, pair, version) {
     labs( title = sprintf("Métricas por Etapa - %s vs %s", pair$gam_label, pair$classic_label), subtitle = version_title_label(version))
 }
 
-# Gráfico facetado: métricas x dinámicas
+# Faceted plot: metrics × signal dynamics
 plot_facet_metrics_dynamic <- function(dt_long, pair, version) {
   if (is.null(dt_long) || nrow(dt_long) == 0) {
     message(sprintf("Sin datos para %s - %s (dinámica)", pair$name, version))
@@ -417,7 +420,7 @@ plot_facet_metrics_dynamic <- function(dt_long, pair, version) {
     labs( title = sprintf("Métricas por Dinámica - %s vs %s", pair$gam_label, pair$classic_label), subtitle = version_title_label(version)) 
 }
 
-# Gráfico facetado: métricas globales (facet_wrap por métrica)
+# Faceted plot: global (unstratified) metrics via facet_wrap per metric
 plot_facet_metrics_global <- function(dt_long, pair, version) {
   if (is.null(dt_long) || nrow(dt_long) == 0) {
     message(sprintf("Sin datos para %s - %s (global)", pair$name, version))
@@ -441,7 +444,7 @@ plot_facet_metrics_global <- function(dt_long, pair, version) {
 }
 
 ################################################################################
-# Guardado
+# Plot saving
 ################################################################################
 
 save_plot <- function(p, file_suffix, width, height) {
@@ -451,7 +454,7 @@ save_plot <- function(p, file_suffix, width, height) {
   ggsave(svg_path, p, width = width, height = height, device = svglite)
 }
 
-# Gráficos facetados por etapa
+# Stage-stratified faceted plots — iterate over all versions and method pairs
 generate_all_facet_plots <- function() {
   plots_generated <- 0
   for (version in dataset_versions) {
@@ -467,7 +470,7 @@ generate_all_facet_plots <- function() {
   }
 }
 
-# Gráficos facetados por dinámica
+# Dynamic-stratified faceted plots — iterate over all versions and method pairs
 generate_all_facet_plots_dynamic <- function() {
   plots_generated <- 0
   for (version in dataset_versions) {
@@ -484,7 +487,7 @@ generate_all_facet_plots_dynamic <- function() {
   }
 }
 
-# Gráficos facetados globales (métricas globales sin estratificación)
+# Global (unstratified) faceted plots — iterate over all versions and method pairs
 generate_all_facet_plots_global <- function() {
   plots_generated <- 0
   for (version in dataset_versions) {
@@ -501,25 +504,25 @@ generate_all_facet_plots_global <- function() {
   }
 }
 
-# generación de gráficos
+# Execute all faceted plot generators
 generate_all_facet_plots()
 generate_all_facet_plots_dynamic()
 generate_all_facet_plots_global()
 
 ################################################################################
-# Generación de gráficos para tripletes positivos
+# Positive triplet plot generation
 ################################################################################
 
-# Rutas de datos para tripletes positivos
+# File paths for positive triplet data
 ruta_positive_results <- paste0("./results/", suffix, "/augmentation_results/positive_triplets_results.rds")
 ruta_ade_raw <- "./ade_raw.csv"
 ruta_drug_info <- "./drug.csv"
 output_dir_positive <- paste0(fig_output_dir, "positive_triplets/")
 
-# positivos detectados en dataset original
+# Positives detected in the original (non-simulated) dataset, from 40_network.R
 ruta_network_graphs <- paste0("./results/", suffix, "/network/network_triplets_for_graphs.rds")
 
-# verifica existencia de archivos requeridos
+# Verify that all required input files exist before proceeding
 check_positive_files <- function() {
   archivos_requeridos <- c(ruta_positive_results, ruta_ade_raw, ruta_drug_info)
   nombres <- c("positive_triplets_results.rds", "ade_raw.csv", "drug.csv")
@@ -527,30 +530,32 @@ check_positive_files <- function() {
 }
 
 ################################################################################
-# Funciones de carga y preprocesamiento
+# Loading and preprocessing functions
 ################################################################################
 
-# Carga y preprocesa datos de tripletes positivos
-# 
-# Parámetros:
-# ruta_results Ruta al archivo RDS con resultados de augmentation
-# ruta_ade Ruta al archivo CSV con datos ADE originales
+# Load and preprocess positive triplet data.
 #
-# return Lista con data.table de resultados y data.table de ADE procesado
+# Arguments:
+#   ruta_results : path to the RDS file with augmentation results
+#   ruta_ade: path to the CSV file with raw ADE reports
 #
-# Filtra solo casos base (reduction_pct == 0) y exitosos
+# Returns: list with two elements:
+#   $results: data.table filtered to baseline cases (reduction_pct == 0, successful)
+#   $ade_raw: preprocessed ADE data.table
+#
+# Only baseline, fully successful triplets are retained for plotting
 
 carga_datos_positive <- function(ruta_results, ruta_ade) {
-  # Cargar resultados
+  # Load augmentation results
   dt <- readRDS(ruta_results)
   
-  # Filtrar solo base y exitosos
+  # Keep only baseline (no reduction) and fully successful cases
   dt <- dt[reduction_pct == 0 & model_success == TRUE & injection_success == TRUE]
   
-  # Cargar ADE raw
+  # Load raw ADE reports
   ade_raw_dt <- fread(ruta_ade)
   
-  # Procesar sexo si está habilitado
+  # Process sex variable if sex-stratified analysis is enabled
   if (include_sex) {
     cols_req <- c("safetyreportid", "atc_concept_id", "meddra_concept_id", "nichd", "sex")
     ade_raw_dt[, sex := toupper(trimws(sex))]
@@ -570,22 +575,22 @@ carga_datos_positive <- function(ruta_results, ruta_ade) {
   return(list(results = dt, ade_raw = ade_raw_dt))
 }
 
-# Crea tabla de traducción de IDs de drogas canónicos
-# 
-# Parámetros
-# ruta_drug_info Ruta al archivo CSV con información de drogas
+# Build a canonical drug ID translation table.
 #
-# return 
-# data.table con mapeo atc_concept_id -> canonical_id
+# Arguments:
+#  ruta_drug_info : path to the drug CSV file
 #
-# Agrupa drogas por nombre base (antes de ;,)
+# Returns: data.table with columns atc_concept_id -> canonical_id.
+#
+# Drug variants sharing the same base name (text before the first ; or ,)
+# are collapsed to a single canonical ID (the minimum numeric ID in the group)
 
 translation_table <- function(ruta_drug_info) {
   drug_info_original <- fread(ruta_drug_info)
   drug_info_original[, atc_concept_id := as.character(atc_concept_id)]
   drug_info_original[, base_name := tolower(trimws(sub("[;,].*", "", atc_concept_name)))]
   
-  # Crear mapeo canónico
+  # Build canonical mapping: one representative ID per base drug name
   canonical_map <- drug_info_original[, .(
     canonical_id = min(atc_concept_id)
   ), by = base_name]
@@ -602,16 +607,16 @@ translation_table <- function(ruta_drug_info) {
   return(translation_table[, .(atc_concept_id, canonical_id)])
 }
 
-# Preprocesa datos aplicando traducción de ids y creando lookup
-# 
-# Parámetros:
-# ade_raw_dt data.table con datos ADE originales
-# translation_table data.table con mapeo de IDs
-# 
-# return data.table procesado con key establecida
+# Apply drug ID canonicalization to the ADE dataset and set keys for fast lookup.
+#
+# Arguments:
+#  ade_raw_dt: raw ADE data.table
+#  translation_table: data.table mapping atc_concept_id -> canonical_id
+#
+# Returns: processed data.table with key set on (atc_concept_id, meddra_concept_id, nichd_num)
 
 translate_ade <- function(ade_raw_dt, translation_table) {
-  # Convertir y merge
+  # Cast ID to character and merge with the translation table
   ade_raw_dt[, atc_concept_id := as.character(atc_concept_id)]
   
   ade_raw_dt <- merge(
@@ -621,11 +626,11 @@ translate_ade <- function(ade_raw_dt, translation_table) {
     all.x = TRUE
   )
   
-  # Aplicar traducción
+  # Replace original IDs with their canonical counterparts
   ade_raw_dt[!is.na(canonical_id), atc_concept_id := canonical_id]
   ade_raw_dt[, canonical_id := NULL]
   
-  # Eliminar duplicados
+  # Remove duplicate report–drug–event combinations
   nrow_antes <- nrow(ade_raw_dt)
   cols_unicos <- c("safetyreportid", "atc_concept_id", "meddra_concept_id")
   if (include_sex) cols_unicos <- c(cols_unicos, "sex")
@@ -633,65 +638,67 @@ translate_ade <- function(ade_raw_dt, translation_table) {
   ade_raw_dt <- unique(ade_raw_dt, by = cols_unicos)
   message(sprintf("  Duplicados eliminados: %d", nrow_antes - nrow(ade_raw_dt)))
   
-  # Crear factor ordenado para nichd y variable numérica
+  # Create ordered NICHD factor and a numeric version for indexing
   ade_raw_dt[, nichd := factor(nichd, levels = niveles_nichd, ordered = TRUE)]
   ade_raw_dt[, nichd_num := as.integer(nichd)]
   
-  # Establecer key para lookups eficientes
+  # Set key for efficient subset lookups downstream
   setkey(ade_raw_dt, atc_concept_id, meddra_concept_id, nichd_num)
   
   return(ade_raw_dt)
 }
 
 ################################################################################
-# cálculo de conteos
+# Report count calculation
 ################################################################################
 
-# Calcula conteos de reportes por etapa para un triplete específico
-# 
-# Parámetros
-# drug_a: id droga A
-# drug_b: id droga B  
-# meddra_event: id del evento
-# 
-# return 
-# data.table con conteos por etapa (n_a, n_b, n_ab, n_evento, n_evento_ab)
-# 
-# Esto es increiblemente ineficiente para el pipeline, debería estar hecho en 10_augmentation
-# Pero eso implicaría volver a correr 10_augmentation (2 días y medio)
+# Count spontaneous reports by NICHD stage for a specific drug-drug-event triplet.
+#
+# Arguments:
+#  drug_a: ATC concept ID of drug A
+#  drug_b: ATC concept ID of drug B
+#  meddra_event: MedDRA concept ID of the adverse event
+#  ade_dt: preprocessed ADE data.table (output of translate_ade)
+#
+# Returns: data.table with 7 rows (one per stage) and columns
+#   n_a, n_b, n_ab, n_evento, n_evento_ab
+#
+# Note: computing counts on the fly here is highly inefficient for the full
+# pipeline; ideally this should have been precomputed in 10_augmentation.R.
+# Re-running that script would take ~2.5 days, so we calculate counts here instead
 
 calculate_triplet_counts <- function(drug_a, drug_b, meddra_event, ade_dt) {
-  # ids únicos por exposición
+  # Unique report IDs for each drug and the event
   ids_a <- unique(ade_dt[atc_concept_id == drug_a, safetyreportid])
   ids_b <- unique(ade_dt[atc_concept_id == drug_b, safetyreportid])
   ids_event <- unique(ade_dt[meddra_concept_id == meddra_event, safetyreportid])
   
-  # intersecciones
+  # Co-exposure and exclusive-exposure report sets
   ids_ab <- intersect(ids_a, ids_b)
   ids_a_only <- setdiff(ids_a, ids_b)
   ids_b_only <- setdiff(ids_b, ids_a)
   
-  # Función para contar por etapa
+  # Helper: count unique reports per NICHD stage for a given ID subset
   count_per_stage <- function(ids_subset) {
     if (length(ids_subset) == 0) {
       return(data.table(nichd_num = 1:7, n = 0L))
     }
     counts <- ade_dt[safetyreportid %in% ids_subset, .(n = uniqueN(safetyreportid)), by = nichd_num]
-    # Completa etapas faltantes
+    # Fill in any missing stages with zero counts
     etapas_completas <- data.table(nichd_num = 1:7)
     counts <- merge(etapas_completas, counts, by = "nichd_num", all.x = TRUE)
     counts[is.na(n), n := 0L]
     return(counts[order(nichd_num)])
   }
   
-  # Calcula conteos
+  # Compute per-stage counts for each exposure group
   n_a_dt <- count_per_stage(ids_a_only)
   n_b_dt <- count_per_stage(ids_b_only)
   n_ab_dt <- count_per_stage(ids_ab)
   n_event_dt <- count_per_stage(ids_event)
   n_event_ab_dt <- count_per_stage(intersect(ids_event, ids_ab))
   
-  # Combino resultado
+  # Combine into a single result table
   result <- data.table(
     nichd_num = 1:7,
     n_a = n_a_dt$n,
@@ -705,27 +712,29 @@ calculate_triplet_counts <- function(drug_a, drug_b, meddra_event, ade_dt) {
 }
 
 ################################################################################
-# expansión de datos
+# Triplet data expansion
 ################################################################################
 
-# Expande un triplete con sus métricas y conteos
-# 
-# Parámetros
-# row: fila individual de resultados
-# de_dt: data.table con datos preprocesados
-# 
-# return
-# data.table expandido con métricas y conteos
-# 
-# Extrae métricas de listas y calcula conteos desde ade_raw
-# El problema es que los resultados de inyección no están en ade_raw
-# Entonces se extraen de los diagnostics del rsd 
+# Expand a single triplet result row into a stage-level data.table with
+# metrics and report counts merged together.
+#
+# Arguments:
+#  row: single-row data.table from the results object
+#  ade_dt: preprocessed ADE data.table (can be NULL if counts are embedded)
+#  precomputed_counts: optional data.table of precomputed counts keyed by triplet_id
+#
+# Returns: long data.table with one row per NICHD stage, containing GAM and
+#  classic metric estimates, confidence bounds, and report counts.
+#
+# Metrics are extracted from list columns in the RDS results.
+# Injected counts (from the augmentation diagnostics) are added to the
+# observed event counts before plotting
 
 expand_triplets_counts <- function(row, ade_dt, precomputed_counts = NULL) {
-  # Extraer etapas
+  # Extract NICHD stage indices
   stages <- unlist(row$stage)
   
-  # Métricas GAM
+  # GAM metrics
   gam_log_ior <- unlist(row$log_ior)
   gam_log_ior_lower <- unlist(row$log_ior_lower90)
   gam_log_ior_upper <- gam_log_ior + (gam_log_ior - gam_log_ior_lower)
@@ -734,7 +743,7 @@ expand_triplets_counts <- function(row, ade_dt, precomputed_counts = NULL) {
   gam_reri_lower <- unlist(row$reri_lower90)
   gam_reri_upper <- unlist(row$reri_upper90)
   
-  # Métricas Clásico
+  # Classic (stratified) metrics
   cls_log_ior <- unlist(row$log_ior_classic)
   cls_log_ior_lower <- unlist(row$log_ior_classic_lower90)
   cls_log_ior_upper <- cls_log_ior + (cls_log_ior - cls_log_ior_lower)
@@ -743,19 +752,21 @@ expand_triplets_counts <- function(row, ade_dt, precomputed_counts = NULL) {
   cls_reri_lower <- unlist(row$RERI_classic_lower90)
   cls_reri_upper <- unlist(row$RERI_classic_upper90)
   
-  # bloque para admitir también los positivos de 40_network del dataset real
+  # Resolve report counts: supports precomputed, embedded (from 40_network.R),
+  # or on-the-fly calculation from ade_dt
   if (!is.null(precomputed_counts)) {
     counts_dt <- precomputed_counts[triplet_id == row$triplet_id]
     if (nrow(counts_dt) == 0)
       counts_dt <- calculate_triplet_counts(row$drugA, row$drugB, row$meddra, ade_dt)
   } else if (!is.null(row$counts_by_stage[[1]])) {
-    # Conteos embebidos directamente en la fila del objeto de red
+    # Counts are already embedded in the network results row
     counts_dt <- row$counts_by_stage[[1]]
   } else {
     counts_dt <- calculate_triplet_counts(row$drugA, row$drugB, row$meddra, ade_dt)
   }
   
-  # diagnostics[[1]]$injection_by_stage tiene nichd_num y N (inyectados por etapa)
+  # Extract injected counts per stage from diagnostics$injection_by_stage
+  # (columns: nichd_num, N); fill missing stages with 0
     inj_by_stage <- tryCatch({
     diag <- row$diagnostics[[1]]
     if (!is.null(diag) && !is.null(diag$injection_by_stage)) {
@@ -765,34 +776,34 @@ expand_triplets_counts <- function(row, ade_dt, precomputed_counts = NULL) {
     } else { rep(0L, 7) }
   }, error = function(e) rep(0L, 7))
   
-  # Sumar inyectados a n_evento_ab y n_evento
+  # Add injected reports to observed event counts for plotting purposes
   counts_dt[, n_evento_ab := n_evento_ab + inj_by_stage]
   counts_dt[, n_evento := n_evento + inj_by_stage]
 
-  # Verificar longitudes consistentes
+  # Guard against mismatched vector lengths across sources
   n <- min(length(stages), length(gam_log_ior), nrow(counts_dt))
   if (n == 0) return(NULL)
   
-  # Combinar todo
+  # Assemble final stage-level data.table
   result <- data.table(
     triplet_id = row$triplet_id,
     dynamic = row$dynamic,
     stage_num = stages[1:n],
-    # Métricas GAM
+    # GAM metrics
     gam_log_ior = gam_log_ior[1:n],
     gam_log_ior_lower = gam_log_ior_lower[1:n],
     gam_log_ior_upper = gam_log_ior_upper[1:n],
     gam_reri = gam_reri[1:n],
     gam_reri_lower = gam_reri_lower[1:n],
     gam_reri_upper = gam_reri_upper[1:n],
-    # Métricas Clásico
+    # Classic metrics
     cls_log_ior = cls_log_ior[1:n],
     cls_log_ior_lower = cls_log_ior_lower[1:n],
     cls_log_ior_upper = cls_log_ior_upper[1:n],
     cls_reri = cls_reri[1:n],
     cls_reri_lower = cls_reri_lower[1:n],
     cls_reri_upper = cls_reri_upper[1:n],
-    # Conteos
+    # Report counts
     n_a = counts_dt$n_a[1:n],
     n_b = counts_dt$n_b[1:n],
     n_ab = counts_dt$n_ab[1:n],
@@ -804,24 +815,28 @@ expand_triplets_counts <- function(row, ade_dt, precomputed_counts = NULL) {
 }
 
 ################################################################################
-# visualización
+# Triplet-level visualization
 ################################################################################
 
-# Genera gráfico de métricas con conteos para un triplete
-# 
-# Parámetros:
-# plot_dt: datos expandidos del triplete
-# metric_col: columna con valores de métrica
-# lower_col: columna con límite inferior IC
-# upper_col: columna con límite superior IC
-# y_label: etiqueta para eje Y principal
-# file_suffix: Sufijo para nombre de archivo
-# max_count: máximo esperado para escala logarítmica secundaria
+# Generate a dual-axis plot for a single triplet: metric trajectory (primary Y)
+# overlaid on report count bars (secondary log Y)
+#
+# Arguments:
+#  plot_dt: expanded stage-level data.table for this triplet
+#  metric_col: column name of the main metric values
+#  lower_col: column name of the lower confidence bound
+#  upper_col: column name of the upper confidence bound
+#  y_label: label for the primary Y axis
+#  file_suffix: identifier string used in the output filename
+#  y_limit: symmetric Y range for the primary axis (default ±10)
+#  max_count: expected maximum report count, used to calibrate the log scale (default 5000)
+#  plot_title: optional plot title (defaults to dynamic + triplet ID)
+#  plot_subtitle: optional subtitle (defaults to "A + B")
 
 graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col,
                                   y_label, file_suffix, y_limit = 10, max_count = 5000,
                                   plot_title = NULL, plot_subtitle = NULL) {
-  # datos en formato largo
+  # Pivot count columns to long format for bar rendering
   counts_long <- melt(
     plot_dt,
     id.vars = "stage_num",
@@ -830,22 +845,22 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col,
     value.name = "count"
   )
   
-  # Etiquetas para leyenda
+  # Legend labels for each count group
   metric_labels <- c(
     n_a = "A", n_b = "B", n_ab = "A-B",
     n_evento = "Evento", n_evento_ab = "A-B-Evento"
   )
   counts_long[, metric_label := factor(metric_labels[as.character(metric)], levels = unname(metric_labels))]
   
-  # calculo posiciones X para barras (con dodging manual)
+  # Compute dodged bar X positions manually (5 groups, evenly spaced within each stage)
   bar_w <- 0.12
   counts_long[, metric_idx := as.integer(metric)]
   counts_long[, x_center := stage_num + (metric_idx - 3) * bar_w]
   counts_long[, xmin := x_center - bar_w/2]
   counts_long[, xmax := x_center + bar_w/2]
   
-  # Transformación logarítmica para eje secundario
-  # Mapeo: 1 -> -y_limit, max_count -> y_limit
+  # Log-linear transformation for the secondary axis:
+  # maps count = 1 -> -y_limit and count = max_count -> +y_limit
   transforma_a_log <- function(count) {
     count_adj <- pmax(count, 1)
     -y_limit + (log10(count_adj) / log10(max_count)) * (2 * y_limit)
@@ -859,35 +874,35 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col,
   counts_long[, ymax := transforma_a_log(count)]
   counts_long[, ymin := -y_limit]
   
-  # gráfico
+  # Build the composite plot
   p <- ggplot() +
-    # Barras de conteos
+    # Report count bars (secondary axis, log-scaled)
     geom_rect(
       data = counts_long,
       aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = metric_label),
       alpha = 0.6, color = NA
     ) +
-    # Línea de cero
+    # Zero reference line
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
-    # IC 
+    # Confidence interval ribbon for the metric
     geom_ribbon(
       data = plot_dt,
       aes(x = stage_num, ymin = .data[[lower_col]], ymax = .data[[upper_col]]),
       alpha = 0.3, fill = "#2c3e50"
     ) +
-    # Línea del métrico
+    # Metric trajectory line
     geom_line(
       data = plot_dt,
       aes(x = stage_num, y = .data[[metric_col]]),
       color = "#2c3e50", linewidth = 1.2
     ) +
-    # puntos de métrica
+    # Metric value points
     geom_point(
       data = plot_dt,
       aes(x = stage_num, y = .data[[metric_col]]),
       color = "#2c3e50", size = 4, fill = "white", shape = 21, stroke = 1.5
     ) +
-    # Escalas
+    # Axis scales
     scale_x_continuous(
       breaks = 1:7,
       labels = nichd_labels,
@@ -897,7 +912,7 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col,
       name = y_label,
       limits = c(-y_limit, y_limit),
       breaks = {
-        # breaks visibles independientemente del rango
+        # Compute readable breaks regardless of the axis range
         step <- 10^floor(log10(y_limit / 4))
         step <- step * if (y_limit / step > 8) 2 else 1
         seq(-y_limit, y_limit, by = step)
@@ -910,7 +925,7 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col,
       )
     ) +
     scale_fill_brewer(palette = "Set2", name = "") +
-    # Etiquetas
+    # Plot labels
     labs(
       title = if (!is.null(plot_title)) plot_title
       else paste0(plot_dt$dynamic[1], " | Triplete: ", plot_dt$triplet_id[1]),
@@ -930,17 +945,17 @@ graph_metrics_counts <- function(plot_dt, metric_col, lower_col, upper_col,
 }
 
 ################################################################################
-# Generación de gráficos para tripletes positivos
+# Positive triplet plot generation
 ################################################################################
 
-# Guarda un gráfico de triplete positivo.
+# Save a single positive triplet plot to disk.
 #
-# Parámetros:
-# p: objeto ggplot
-# triplet_id: id numérico del triplete
-# dynamic: etiqueta de dinámica (usada en el nombre de archivo)
-# suffix: sufijo identificador del método/métrica (e.g. "GAM_LogIOR")
-# dir: directorio de salida; por defecto output_dir_positive
+# Arguments:
+#  p: ggplot object
+#  triplet_id: numeric triplet identifier
+#  dynamic: dynamic label string (used in the filename)
+#  suffix: method/metric identifier string (e.g. "GAM_LogIOR")
+#  dir: output directory (defaults to output_dir_positive)
 
 save_positive_graph <- function(p, triplet_id, dynamic, suffix,
                                  dir = output_dir_positive) {
@@ -956,11 +971,12 @@ save_positive_graph <- function(p, triplet_id, dynamic, suffix,
   )
 }
 
-# Genera gráficos para tripletes positivos del pipeline de augmentation.
+# Generate plots for all positive triplets from the augmentation pipeline.
 #
-# fuente : positive_triplets_results.rds  (reduction_pct == 0, línea de base)
-# conteos: calculados on-the-fly desde ade_raw.csv con calculate_triplet_counts()
-# métricas: GAM-LogIOR, GAM-RERI, Clásico-LogIOR, Clásico-RERI
+# Source: positive_triplets_results.rds (baseline only: reduction_pct == 0)
+# Counts: computed on the fly from ade_raw.csv via calculate_triplet_counts()
+# Metrics: GAM-LogIOR, GAM-RERI, Classic-LogIOR, Classic-RERI
+# (each metric is only plotted if its CI bounds are finite)
 
 generate_positive_graphs_from_results <- function() {
   dir.create(output_dir_positive, showWarnings = FALSE, recursive = TRUE)
@@ -1038,15 +1054,15 @@ generate_positive_graphs_from_results <- function() {
   return(invisible(generated_graphs))
 }
 
-# Genera gráficos para tripletes del dataset ORIGINAL detectados como positivos en 40_network.
+# Generate plots for triplets from the ORIGINAL dataset detected as positive in 40_network.R.
 #
-# fuente: network_triplets_for_graphs.rds
-#  ya filtrado a positivos (triplet_id %in% positives$triplet_id en 40_network.R)
-#  incluye drugA_name, drugB_name, meddra_name resueltos por 40_network.R
-#  incluye counts_by_stage preembebidos (no se recalculan aquí)
-# título : "<drugA_name> + <drugB_name> | Triplete: <id>"   /   "<meddra_name>"
-# Métrica: solo GAM-LogIOR (RERI y métricas clásicas son NULL en este pipeline; se omiten)
-# Salida: subcarpeta "network/" dentro de output_dir_positive
+# Source : network_triplets_for_graphs.rds
+#  already filtered to positives (triplet_id %in% positives$triplet_id in 40_network.R)
+#  drugA_name, drugB_name, meddra_name resolved by 40_network.R
+#  counts_by_stage embedded per row (not recomputed here)
+# Title: "<drugA_name> + <drugB_name> | Triplete: <id>" / "<meddra_name>"
+# Metric: GAM-LogIOR only (RERI and classic metrics are NULL in this pipeline; skipped)
+# Output: subfolder "network/" inside output_dir_positive
 
 generate_positive_graphs_from_network <- function() {
   if (!file.exists(ruta_network_graphs)) {
@@ -1067,12 +1083,12 @@ generate_positive_graphs_from_network <- function() {
     tryCatch({
       row <- dt[i]
 
-      # drugA_name, drugB_name y meddra_name están garantizados por 40_network.R
+      # drugA_name, drugB_name, and meddra_name are guaranteed to be present (set by 40_network.R)
       ptitle <- paste0(row$drugA_name, " + ", row$drugB_name,
                           " | Triplete: ", row$triplet_id)
       psubtitle <- row$meddra_name
 
-      # Los conteos vienen en counts_by_stage; ade_dt no es necesario
+      # Counts come from counts_by_stage embedded in the row; ade_dt is not needed here
       plot_dt <- expand_triplets_counts(row, ade_dt = NULL, precomputed_counts = NULL)
       if (is.null(plot_dt) || nrow(plot_dt) == 0) {
         message(sprintf("\n  Salteando triplete %d: sin datos expandibles", i))
@@ -1100,6 +1116,7 @@ generate_positive_graphs_from_network <- function() {
   return(invisible(generated_graphs))
 }
 
-# Ejecución
-generate_positive_graphs_from_network()
+# Run both positive triplet plot generators
 generate_positive_graphs_from_results()
+generate_positive_graphs_from_network()
+
