@@ -16,7 +16,7 @@ set.seed(7113)
 library(pacman)
 pacman::p_load(tidyverse, data.table, pbapply, parallel, doParallel, foreach,
   mgcv, MASS, akima, doRNG, pROC, svglite, DHARMa,
-  igraph, ggraph, tidygraph, scales, RColorBrewer, patchwork, graphlayouts, ggrepel, networkD33, htmlwidgets, ggalluvial)
+  igraph, ggraph, tidygraph, scales, RColorBrewer, patchwork, graphlayouts, ggrepel, networkD3, htmlwidgets, ggalluvial)
 
 # NICHD stage level ordering used throughout all scripts
 niveles_nichd <- c(
@@ -25,7 +25,7 @@ niveles_nichd <- c(
 )
 
 # Number of cores for parallelization (0.80 crashes with 16GB RAM)
-n_cores <- max(1, floor(detectCores() * 0.80)) 
+n_cores <- max(1, floor(detectCores() * 0.50)) 
 
 # General file paths
 ruta_ade_raw <- "./ade_raw.csv"
@@ -189,6 +189,115 @@ coadmin_by_stage <- function(drugA, drugB, meddra, ade_data) {
   setnames(stage_counts, "N", "n_coadmin_stage")
   
   return(stage_counts[order(nichd_num)])
+}
+
+################################################################################
+# Batch co-administration counts by NICHD stage
+################################################################################
+
+# Computes A+B co-administration counts by stage for a batch of triplets
+# using a single set of joins instead of iterating pair-by-pair.
+#
+# Parameters:
+# pairs_dt: data.table with triplet_id, drugA, drugB, and meddra
+# ade_dt: pre-computed unique report-drug-stage table
+#
+# Return:
+# data.table with one row per triplet_id x nichd_num
+# and the corresponding n_coadmin_stage count
+
+compute_coadmin_batch <- function(pairs_dt, ade_dt) {
+  
+  pair_meta <- unique(pairs_dt[, .(triplet_id, drugA, drugB, meddra)])
+  
+  if (nrow(pair_meta) == 0) {
+    return(data.table(
+      triplet_id = integer(),
+      drugA = character(),
+      drugB = character(),
+      meddra = character(),
+      nichd_num = integer(),
+      nichd = character(),
+      n_coadmin_stage = integer()
+    ))
+  }
+  
+  # Join each unique drug only once to avoid exploding rows when many
+  # triplets share the same drugA or drugB.
+  unique_pairs <- unique(pair_meta[, .(drugA, drugB)])
+  unique_a <- unique(pair_meta[, .(drugA)])
+  unique_b <- unique(pair_meta[, .(drugB)])
+  
+  reports_a <- ade_dt[
+    unique_a,
+    on = .(atc_concept_id = drugA),
+    nomatch = 0L,
+    .(drugA = i.drugA, safetyreportid, nichd_num)
+  ]
+  
+  reports_b <- ade_dt[
+    unique_b,
+    on = .(atc_concept_id = drugB),
+    nomatch = 0L,
+    .(drugB = i.drugB, safetyreportid)
+  ]
+  
+  # Build report-level co-administrations at the drug-pair level first.
+  coadmin_drug <- reports_a[
+    reports_b,
+    on = .(safetyreportid),
+    nomatch = 0L,
+    allow.cartesian = TRUE,
+    .(drugA, drugB = i.drugB, safetyreportid, nichd_num)
+  ]
+  
+  # Keep only the drug pairs that were requested in pairs_dt.
+  coadmin_drug <- coadmin_drug[
+    unique_pairs,
+    on = .(drugA, drugB),
+    nomatch = 0L
+  ]
+  
+  stage_counts <- coadmin_drug[
+    , .(n_coadmin_stage = .N),
+    by = .(drugA, drugB, nichd_num)
+  ]
+  
+  full_grid <- CJ(
+    row_id = seq_len(nrow(unique_pairs)),
+    nichd_num = seq_along(niveles_nichd),
+    unique = TRUE
+  )
+  full_grid[, `:=`(
+    drugA = unique_pairs$drugA[row_id],
+    drugB = unique_pairs$drugB[row_id]
+  )]
+  full_grid[, row_id := NULL]
+  
+  result_drug <- merge(
+    full_grid,
+    stage_counts,
+    by = c("drugA", "drugB", "nichd_num"),
+    all.x = TRUE
+  )
+  
+  result_drug[is.na(n_coadmin_stage), n_coadmin_stage := 0L]
+  result_drug[, nichd := niveles_nichd[nichd_num]]
+  
+  result <- merge(
+    pair_meta,
+    result_drug,
+    by = c("drugA", "drugB"),
+    all.x = TRUE,
+    allow.cartesian = TRUE
+  )
+  
+  setcolorder(
+    result,
+    c("triplet_id", "drugA", "drugB", "meddra", "nichd_num", "nichd", "n_coadmin_stage")
+  )
+  
+  return(result[order(triplet_id, nichd_num)])
 }
 
 ################################################################################
@@ -472,10 +581,6 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
   
   #sum() on empty table returns NA, not 0
   if (length(n_injected_high) == 0 || is.na(n_injected_high)) n_injected_high <- 0L
-    
-  diagnostics$n_injected_high <- n_injected_high
-  diagnostics$high_stages <- high_stages
-  diagnostics$n_injected_total <- length(reports_to_mark)
   
   if (n_injected_high == 0L) {
     return(list(
@@ -490,7 +595,17 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
         dynamic_type,
         length(reports_to_mark)
       ),
-      diagnostics = c(diagnostics, list(reason = "zero_events_in_high_stages"))
+      diagnostics = list(            
+      reason = "zero_events_in_high_stages",
+      n_injected_high = n_injected_high,
+      high_stages = high_stages,
+      n_injected_total = length(reports_to_mark),
+      e_j = e_j,
+      t_ij = t_ij,
+      fold_change = fold_change,
+      dynamic_type = dynamic_type,
+      stage_probs = stage_probs
+    )
     ))
   }
 
@@ -525,6 +640,10 @@ inject_signal <- function(drugA_id, drugB_id, event_id,
     injection_by_stage = injection_by_stage_temp
   )
   
+  diagnostics$n_injected_high <- n_injected_high
+  diagnostics$high_stages <- high_stages
+  diagnostics$n_injected_total <- length(reports_to_mark)
+
   return(list(
     success = TRUE,
     injection_success = TRUE,
@@ -1614,7 +1733,7 @@ fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
       injection_success = if(!is.null(rowt$injection_success)) rowt$injection_success else NA,
       n_injected = if(!is.null(rowt$n_injected)) rowt$n_injected else NA_integer_,
       n_coadmin = counts_reduced$n_coadmin,
-      n_events = counts_reduced$n_events_total,
+      n_events = counts_reduced$n_events,
       n_stages_significant = NA_integer_,
       max_ior = NA_real_,
       mean_ior = NA_real_,
@@ -1666,7 +1785,7 @@ fit_reduced_model <- function(ade_reduced, rowt, reduction_pct) {
     injection_success = if(!is.null(rowt$injection_success)) rowt$injection_success else NA,
     n_injected = if(!is.null(rowt$n_injected)) rowt$n_injected else NA_integer_,
     n_coadmin = model_res$n_coadmin,
-    n_events = model_res$n_events_total,
+    n_events = model_res$n_events,
     n_stages_significant = model_res$n_stages_significant,
     max_ior = model_res$max_ior,
     mean_ior = model_res$mean_ior,

@@ -10,7 +10,7 @@ source("00_functions.R", local = TRUE)
 ################################################################################
 
 # Control set parameters
-n_pos <- 500
+n_pos <- 1000
 n_neg <- 10000
 lambda_fc <- 0.75
 dinamicas <- c("uniform","increase","decrease","plateau","inverse_plateau")
@@ -26,7 +26,7 @@ max_events_per_pair <- 10000
 reduction_levels <- seq(10, 90, by = 10)  # 10%, 20% ... 90%
 
 # Batch processing parameters
-batch_size_pos <- 50    # Batch size for positive triplets
+batch_size_pos <- 25    # Batch size for positive triplets
 save_interval <- 1   # Save every X completed batches
 
 n_null_reports <- 100000  
@@ -139,6 +139,13 @@ trip_summary <- trip_counts_by_stage[, .(
   stages_with_data = list(nichd_num)
 ), by = .(drugA, drugB, meddra)]
 
+# Pre-compute the unique report-drug-stage table used by batch
+# co-administration joins for both positive and negative triplets.
+coadmin_precomp <- unique(
+  ade_raw_dt[, .(safetyreportid, atc_concept_id, nichd_num)]
+)
+setkey(coadmin_precomp, atc_concept_id)
+
 if (all_nichd_rep) {
   candidatos_pos <- trip_summary[
     N >= min_reports_triplet & 
@@ -211,29 +218,15 @@ fwrite(pos_meta, paste0(output_dir, "positive_triplets_metadata.csv"))
 # Co-administration counts by NICHD stage for positive triplets
 ################################################################################
 
-coadmin_stage_pos_list <- lapply(1:nrow(pos_meta), function(i) {
-  row <- pos_meta[i]
-  result <- coadmin_by_stage(
-    drugA = row$drugA, 
-    drugB = row$drugB, 
-    meddra = row$meddra, 
-    ade_data = ade_raw_dt
-  )
-  result[, `:=`(
-    triplet_id = row$triplet_id,
-    drugA = row$drugA,
-    drugB = row$drugB,
-    meddra = row$meddra
-  )]
-  return(result)
-})
-
-coadmin_stage_pos <- rbindlist(coadmin_stage_pos_list)
+coadmin_stage_pos <- compute_coadmin_batch(
+  pairs_dt = pos_meta[, .(triplet_id, drugA, drugB, meddra)],
+  ade_dt = coadmin_precomp
+)
 setcolorder(coadmin_stage_pos, c("triplet_id", "drugA", "drugB", "meddra", "nichd_num", "nichd", "n_coadmin_stage"))
 
 fwrite(coadmin_stage_pos, paste0(output_dir, "positive_coadmin_by_stage.csv"))
 
-rm(coadmin_stage_pos_list, coadmin_stage_pos)
+rm(coadmin_stage_pos)
 gc()
 
 ################################################################################
@@ -537,30 +530,16 @@ message(sprintf("  Etapas promedio: %.1f", mean(selected_negatives$n_stages_with
 ################################################################################
 
 # Computes how many co-administration reports exist per NICHD stage for each
-# selected negative triplet; saved for use in downstream analysis
-coadmin_stage_neg_list <- lapply(1:nrow(selected_negatives), function(i) {
-  row <- selected_negatives[i]
-  result <- coadmin_by_stage(
-    drugA = row$drugA, 
-    drugB = row$drugB, 
-    meddra = row$meddra, 
-    ade_data = ade_raw_dt
-  )
-  result[, `:=`(
-    triplet_id = row$triplet_id,
-    drugA = row$drugA,
-    drugB = row$drugB,
-    meddra = row$meddra
-  )]
-  return(result)
-})
-
-coadmin_stage_neg <- rbindlist(coadmin_stage_neg_list)
+# selected negative triplet; saved for use in downstream analysis.
+coadmin_stage_neg <- compute_coadmin_batch(
+  pairs_dt = selected_negatives[, .(triplet_id, drugA, drugB, meddra)],
+  ade_dt = coadmin_precomp
+)
 setcolorder(coadmin_stage_neg, c("triplet_id", "drugA", "drugB", "meddra", "nichd_num", "n_coadmin_stage"))
 
 fwrite(coadmin_stage_neg, paste0(output_dir, "negative_coadmin_by_stage.csv"))
 
-rm(coadmin_stage_neg_list, coadmin_stage_neg)
+rm(coadmin_stage_neg)
 gc()
 
 # Pre-compute reduced datasets for each sensitivity level; passed to workers later
@@ -575,12 +554,12 @@ reduced_datasets <- setNames(
 # Batch processing of negative triplets
 ################################################################################
 
-batch_size_neg <- 50
-n_batches      <- ceiling(nrow(selected_negatives) / batch_size_neg)
+batch_size_neg <- 20
+n_batches <- ceiling(nrow(selected_negatives) / batch_size_neg)
 
 # Helper: detect existing checkpoints and return the batch to start from 
 detect_neg_checkpoints <- function(out_dir, pass_tag) {
-  pattern  <- sprintf("checkpoint_neg_%s_batch_\\d+\\.rds", pass_tag)
+  pattern <- sprintf("checkpoint_neg_%s_batch_\\d+\\.rds", pass_tag)
   cp_files <- list.files(out_dir, pattern = pattern, full.names = TRUE)
 
   if (length(cp_files) == 0) return(1L)
@@ -594,9 +573,9 @@ detect_neg_checkpoints <- function(out_dir, pass_tag) {
 }
 
 # Helper: run all batches for a single reduction-level pass 
-# pass_tag : string used in checkpoint filenames ("base", "red10", "red20", ...)
-# ade_pass : the dataset to use for this pass (full or reduced)
-# red_pct  : numeric value stored in the reduction_pct output column
+# pass_tag: string used in checkpoint filenames ("base", "red10", "red20", ...)
+# ade_pass: the dataset to use for this pass (full or reduced)
+# red_pct: numeric value stored in the reduction_pct output column
 #
 # The parallel backend must be registered (registerDoParallel) before calling
 # this function. GAM parameters are read from the enclosing environment via
@@ -634,7 +613,7 @@ run_neg_batch_pass <- function(pass_tag, ade_pass, red_pct, cl) {
       # Basic co-occurrence counts used as fallback when the model fails
       counts <- tryCatch(
         calc_basic_counts(ade_pass, rowt$drugA, rowt$drugB, rowt$meddra),
-        error = function(e) list(n_events_coadmin = NA, n_events_total = NA, n_coadmin = NA)
+        error = function(e) list(n_events_coadmin = NA, n_coadmin = NA)
       )
 
       tryCatch({
@@ -678,7 +657,7 @@ run_neg_batch_pass <- function(pass_tag, ade_pass, red_pct, cl) {
             reduction_pct = red_pct,
             N = counts$n_events_coadmin,
             model_success = FALSE,
-            n_events = counts$n_events_total,
+            n_events = counts$n_events,
             n_coadmin = counts$n_coadmin,
             n_stages_significant = NA_integer_,
             max_ior = NA_real_,
@@ -689,7 +668,7 @@ run_neg_batch_pass <- function(pass_tag, ade_pass, red_pct, cl) {
             log_ior_lower90 = list(rep(NA_real_, 7)),
             ior_values = list(rep(NA_real_, 7)),
             formula_used = if (!is.null(model_res$formula_attempted)) model_res$formula_attempted else NA_character_,
-            message = if (!is.null(model_res$error_msg))         model_res$error_msg         else NA_character_,
+            message = if (!is.null(model_res$error_msg)) model_res$error_msg else NA_character_,
             classic_success = classic_res$success,
             log_ior_classic = list(rep(NA_real_, 7)),
             log_ior_classic_lower90 = list(rep(NA_real_, 7)),
@@ -716,7 +695,7 @@ run_neg_batch_pass <- function(pass_tag, ade_pass, red_pct, cl) {
             N = model_res$n_events_coadmin,
             model_success = TRUE,
             n_coadmin  = model_res$n_coadmin,
-            n_events = model_res$n_events_total,
+            n_events = model_res$n_events,
             n_stages_significant = model_res$n_stages_significant,
             max_ior = model_res$max_ior,
             mean_ior = model_res$mean_ior,
@@ -751,7 +730,7 @@ run_neg_batch_pass <- function(pass_tag, ade_pass, red_pct, cl) {
           reduction_pct = red_pct,
           N = counts$n_events_coadmin,
           model_success = FALSE,
-          n_events = counts$n_events_total,
+          n_events = counts$n_events,
           n_coadmin = counts$n_coadmin,
           error_msg = paste("Unhandled error:", e$message)
         )
@@ -759,14 +738,13 @@ run_neg_batch_pass <- function(pass_tag, ade_pass, red_pct, cl) {
 
     } # end foreach
 
-    # Filter out foreach-level condition objects (distinct from per-triplet
-    # errors already handled by the inner tryCatch above)
+    # Filter out foreach-level condition objects (distinct from per-triplet errors already handled by the inner tryCatch above)
     batch_results_clean <- Filter(function(x) !inherits(x, "error"), batch_results)
 
     if (length(batch_results_clean) > 0) {
       batch_dt <- rbindlist(batch_results_clean, fill = TRUE)
 
-      # Write to disk immediately — this is the only stored copy of this batch;
+      # Write to disk immediately. this is the only stored copy of this batch;
       # freed right after to prevent accumulation across batches
       checkpoint_file <- sprintf(
         "%scheckpoint_neg_%s_batch_%d.rds", output_dir, pass_tag, batch

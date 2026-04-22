@@ -382,7 +382,6 @@ stopCluster(cl)
 # Results summary
 ################################################################################
 
-
 message(sprintf("total de permutaciones: %d", permutation_attempt))
 message(sprintf("permutaciones exitosas: %d", permutation_attempt - failed_attempts))
 message(sprintf("tasa de éxito: %.1f%%",
