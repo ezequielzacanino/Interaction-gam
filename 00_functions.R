@@ -2884,23 +2884,34 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
   } else {
     ior_col <- "classic_log_ior_lower90"
     reri_col <- "classic_reri_lower90"
-    thresh_ior_col <- NULL
-    thresh_reri_col <- NULL
+    # Classic null thresholds. populated when 20_null runs classic methods
+    thresh_ior_col  <- "threshold_classic_ior"
+    thresh_reri_col <- "threshold_classic_reri"
   }
   
   # Compute detection flags by criterion type
+  # use_null applies to both GAM (threshold_ior/reri) and classic (threshold_classic_ior/reri)
   if (detection_type == "IOR") {
-    if (is_gam && use_null) {   # GAM detection with null distribution threshold
+    if (use_null && thresh_ior_col %in% names(dt)) {
       dt[, detected := !is.na(get(ior_col)) & get(ior_col) > 0 & get(ior_col) > get(thresh_ior_col)]
-    } else { dt[, detected := !is.na(get(ior_col)) & get(ior_col) > 0]}
+    } else {
+      dt[, detected := !is.na(get(ior_col)) & get(ior_col) > 0]}
   } else if (detection_type == "RERI") {
-    if (is_gam && use_null) { dt[, detected := !is.na(get(reri_col)) & get(reri_col) > 0 & get(reri_col) > get(thresh_reri_col)]
-    } else {dt[, detected := !is.na(get(reri_col)) & get(reri_col) > 0]}
-  } else { # Doble
-    if (is_gam && use_null) {
-      dt[, detected := (!is.na(get(ior_col)) & get(ior_col) > 0 & get(ior_col) > get(thresh_ior_col)) | # both criteria
-                       (!is.na(get(reri_col)) & get(reri_col) > 0 & get(reri_col) > get(thresh_reri_col))]
-    } else { dt[, detected := (!is.na(get(ior_col)) & get(ior_col) > 0) | (!is.na(get(reri_col)) & get(reri_col) > 0)]}
+    if (use_null && thresh_reri_col %in% names(dt)) {
+      dt[, detected := !is.na(get(reri_col)) & get(reri_col) > 0 & get(reri_col) > get(thresh_reri_col)]
+    } else {
+      dt[, detected := !is.na(get(reri_col)) & get(reri_col) > 0]}
+  } else {
+    # Double criterion: IOR OR RERI
+    ior_det <- if (use_null && thresh_ior_col %in% names(dt)) {
+      !is.na(dt[[ior_col]]) & dt[[ior_col]] > 0 & dt[[ior_col]] > dt[[thresh_ior_col]]
+    } else {
+      !is.na(dt[[ior_col]]) & dt[[ior_col]] > 0}
+    reri_det <- if (use_null && thresh_reri_col %in% names(dt)) {
+      !is.na(dt[[reri_col]]) & dt[[reri_col]] > 0 & dt[[reri_col]] > dt[[thresh_reri_col]]
+    } else {
+      !is.na(dt[[reri_col]]) & dt[[reri_col]] > 0}
+    dt[, detected := ior_det | reri_det]
   }
   
   # Replace NA with FALSE (i.e., not detected)
