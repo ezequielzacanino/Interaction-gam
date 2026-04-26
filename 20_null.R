@@ -284,6 +284,16 @@ for (batch in 1:n_batches) {
         any(is.na(model_res$reri_lower90)) ||
         any(is.infinite(model_res$reri_lower90))) next
       
+      # Classic methods on permuted data (null distribution for stratified methods) 
+      classic_null_ior <- tryCatch(calculate_classic_ior(rowt$drugA, rowt$drugB, rowt$meddra, ade_modified),
+        error = function(e) list(success = FALSE))
+      classic_null_reri <- tryCatch(calculate_classic_reri(rowt$drugA, rowt$drugB, rowt$meddra, ade_modified),
+        error = function(e) list(success = FALSE))
+      classic_ior_lower90_vec <- if (classic_null_ior$success)
+        classic_null_ior$results_by_stage$log_ior_classic_lower90 else rep(NA_real_, 7)
+      classic_reri_lower90_vec <- if (classic_null_reri$success)
+        classic_null_reri$results_by_stage$RERI_classic_lower90 else rep(NA_real_, 7)
+      
       # Store results including RERI estimates
       result_dt <- data.table(
         drugA = rowt$drugA,
@@ -293,7 +303,9 @@ for (batch in 1:n_batches) {
         log_lower90 = model_res$log_ior_lower90,
         log_ior = model_res$log_ior,
         reri_lower90 = model_res$reri_lower90,  
-        reri_values = model_res$reri_values,    
+        reri_values = model_res$reri_values,
+        classic_ior_lower90  = classic_ior_lower90_vec,
+        classic_reri_lower90 = classic_reri_lower90_vec,    
         permutation = perm_id,
         spline_individuales = spline_individuales,
         include_sex = include_sex,
@@ -472,9 +484,38 @@ cat("\nUmbrales RERI por etapa:\n")
 print(null_thresholds_reri[, .(stage, stage_name, threshold_p99, n_samples)])
 
 ################################################################################
+# Classic null thresholds (stratified IOR and RERI)
+################################################################################
+
+null_thresholds_classic_ior <- null_all[, .(
+  threshold_p90 = quantile(classic_ior_lower90, 0.90, na.rm = TRUE),
+  threshold_p95 = quantile(classic_ior_lower90, 0.95, na.rm = TRUE),
+  threshold_p99 = quantile(classic_ior_lower90, 0.99, na.rm = TRUE),
+  threshold_p999 = quantile(classic_ior_lower90, 0.999, na.rm = TRUE),
+  n_samples = sum(!is.na(classic_ior_lower90))
+), by = stage]
+null_thresholds_classic_ior[, stage_name := niveles_nichd[stage]]
+
+null_thresholds_classic_reri <- null_all[, .(
+  threshold_p90 = quantile(classic_reri_lower90, 0.90, na.rm = TRUE),
+  threshold_p95 = quantile(classic_reri_lower90, 0.95, na.rm = TRUE),
+  threshold_p99 = quantile(classic_reri_lower90, 0.99, na.rm = TRUE),
+  threshold_p999 = quantile(classic_reri_lower90, 0.999, na.rm = TRUE),
+  n_samples = sum(!is.na(classic_reri_lower90))
+), by = stage]
+null_thresholds_classic_reri[, stage_name := niveles_nichd[stage]]
+
+cat("\nClassic IOR null thresholds by stage:\n")
+print(null_thresholds_classic_ior[, .(stage, stage_name, threshold_p99, n_samples)])
+cat("\nClassic RERI null thresholds by stage:\n")
+print(null_thresholds_classic_reri[, .(stage, stage_name, threshold_p99, n_samples)])
+
+################################################################################
 # Save results
 ################################################################################
 
+fwrite(null_thresholds_classic_ior,  paste0(output_dir, "null_thresholds_classic_ior.csv"))
+fwrite(null_thresholds_classic_reri, paste0(output_dir, "null_thresholds_classic_reri.csv"))
 fwrite(null_all, paste0(output_dir, "null_distribution.csv"))
 fwrite(null_thresholds, paste0(output_dir, "null_thresholds.csv"))
 fwrite(null_thresholds_reri, paste0(output_dir, "null_thresholds_reri.csv"))  
