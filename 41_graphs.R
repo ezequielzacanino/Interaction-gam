@@ -45,22 +45,31 @@ dynamic_labels <- c(
   "inverse_plateau" = "Valle"
 )
 
-# Method pairs to compare (GAM vs. stratified, for IOR and RERI)
+# Method pairs to compare: one pair per plot page
+# GAM (null) vs Stratified (nominal): primary comparison
+# GAM (null) vs Stratified (null): apples-to-apples null threshold comparison
+# GAM (nominal) vs Stratified (nominal): purely nominal comparison
 method_pairs <- list(
   list(
-    name = "IOR",
-    gam = "GAM-logIOR",
-    classic = "Estratificado-IOR",
-    gam_label = "GAM-IOR",
-    classic_label = "IOR-Estratificado"
+    name = "IOR", gam = "GAM-logIOR", classic = "Estratificado-IOR",
+    gam_label = "GAM-IOR", classic_label = "IOR-Estratificado"),
+  list(
+    name = "RERI", gam = "GAM-RERI", classic = "Estratificado-RERI",
+    gam_label = "GAM-RERI", classic_label = "RERI-Estratificado"),
+  list(
+    name = "IOR_null", gam = "GAM-logIOR", classic = "Estratificado-IOR_null",
+    gam_label = "GAM-IOR (dist.nula)", classic_label = "IOR-Estrat. (dist.nula)"),
+  list(
+    name = "RERI_null", gam = "GAM-RERI", classic = "Estratificado-RERI_null",
+    gam_label = "GAM-RERI (dist.nula)", classic_label = "RERI-Estrat. (dist.nula)"),
+  list(
+    name = "IOR_nom", gam = "GAM-logIOR_nom", classic = "Estratificado-IOR",
+    gam_label = "GAM-IOR (nominal)", classic_label = "IOR-Estratificado"
   ),
   list(
-    name = "RERI",
-    gam = "GAM-RERI",
-    classic = "Estratificado-RERI",
-    gam_label = "GAM-RERI",
-    classic_label = "RERI-Estratificado"
-  )
+    name = "RERI_nom", gam = "GAM-RERI_nom", classic = "Estratificado-RERI",
+    gam_label = "GAM-RERI (nominal)",  classic_label = "RERI-Estratificado"
+ )
 )
 
 # Dataset versions to process
