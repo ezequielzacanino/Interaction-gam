@@ -270,111 +270,6 @@ prepare_facet_data_global <- function(dt, pair) {
 }
 
 ################################################################################
-# Faceted plot generation functions
-################################################################################
-
-# Generate faceted metric plot stratified by NICHD stage.
-#
-# Layout: rows = metrics, columns = NICHD stages.
-# X-axis: dataset reduction percentage.
-#
-# Arguments:
-#   pair    : method pair metadata
-#   version : dataset version name (used for subtitle)
-
-plot_facet_metrics <- function(dt_long, pair, version) {
-  
-  if (is.null(dt_long) || nrow(dt_long) == 0) {
-    message(sprintf("Sin datos para %s - %s", pair$name, version))
-    return(NULL)
-  }
-  
-  # title based on dataset version
-  version_title <- switch(version,
-    "original" = "Dataset Original",
-    "filtered" = "Dataset Filtrado por Poder",
-    "intersection" = "Dataset de Intersección",
-    version
-  )
-  
-  color_values <- setNames(
-    c("#16A085", "#C0392B"), 
-    c(pair$gam, pair$classic)
-  )
-  linetype_values <- setNames(
-    c("solid", "dashed"), 
-    c(pair$gam, pair$classic)
-  )
-
-  p <- ggplot(dt_long, aes(
-    x = reduction_pct,
-    y = value,
-    color = method,
-    group = method
-  )) +
-    geom_point(size = 2.5, position = position_dodge(width = 5)) +
-    geom_errorbar(
-      aes(ymin = lower, ymax = upper),
-      width = 4,
-      alpha = 0.8,
-      position = position_dodge(width = 5)
-    ) +
-    facet_grid(
-      metric_label ~ nichd,
-      labeller = labeller(nichd = nichd_labels),
-      scales = "free_y"
-    ) +
-    scale_color_manual(
-      name = "Método",
-      values = color_values,
-      labels = setNames(c(pair$gam_label, pair$classic_label), c(pair$gam, pair$classic))
-    ) +
-    scale_linetype_manual(
-      name = "Método",
-      values = linetype_values,
-      labels = setNames(c(pair$gam_label, pair$classic_label), c(pair$gam, pair$classic))
-    ) +
-    scale_x_continuous(
-      breaks = seq(0, 90, by = 10),
-      name = "Reducción del Dataset (%)"
-    ) +
-    scale_y_continuous(
-      limits = c(0, 1),
-      breaks = seq(0, 1, by = 0.25),
-      name = "Valor de la Métrica"
-    ) +
-    # Titles
-    labs(
-      title = sprintf(
-        "Métricas por Etapa - %s vs %s",
-        pair$gam_label, pair$classic_label
-      ),
-      subtitle = version_title
-    ) +
-    # Theme
-    theme_bw(base_size = 14) +
-    theme(
-      plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
-      plot.subtitle = element_text(size = 14, hjust = 0.5, color = "gray30"),
-      strip.background.x = element_rect(fill = "gray90", color = "black"),
-      strip.background.y = element_rect(fill = "gray95", color = "black"),
-      strip.text.x = element_text(face = "bold", size = 14, hjust = 0.5),
-      strip.text.y = element_text(face = "bold", size = 14, hjust = 0.5),
-      axis.text.x = element_text(face = "bold", size = 9, hjust = 0.5),
-      axis.text.y = element_text(size = 10),
-      axis.title = element_text(face = "bold", size = 14),
-      panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
-      panel.grid.minor = element_blank(),
-      panel.spacing = unit(0.3, "lines"),
-      legend.position = "bottom",
-      legend.title = element_text(face = "bold"),
-      legend.text = element_text(face = "bold")
-    )
-  
-  return(p)
-}
-
-################################################################################
 # Main plot generation function
 ################################################################################
 
@@ -396,7 +291,12 @@ plot_facet_metrics <- function(dt_long, pair, version) {
     scale_color_manual(name = "Método", values = sc$color, labels = sc$labels) +
     scale_linetype_manual(name = "Método", values = sc$linetype, labels = sc$labels) +
     scale_x_continuous(breaks = seq(0, 90, by = 10), name = "Reducción del Dataset (%)") +
-    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25), name = "Valor de la Métrica") +
+    scale_y_continuous(
+      breaks = scales::pretty_breaks(n = 4),
+      name = "Valor de la Métrica",
+      # small multiplicative padding so errorbars don't clip at panel edge
+      expand = expansion(mult = 0.08)
+    ) +
     labs( title = sprintf("Métricas por Etapa - %s vs %s", pair$gam_label, pair$classic_label), subtitle = version_title_label(version))
 }
 
@@ -416,7 +316,12 @@ plot_facet_metrics_dynamic <- function(dt_long, pair, version) {
     scale_color_manual(name = "Método", values = sc$color, labels = sc$labels) +
     scale_linetype_manual(name = "Método", values = sc$linetype, labels = sc$labels) +
     scale_x_continuous(breaks = seq(0, 90, by = 10), name = "Reducción del Dataset (%)") +
-    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25), name = "Valor de la Métrica") +
+    scale_y_continuous(
+      breaks = scales::pretty_breaks(n = 4),
+      name = "Valor de la Métrica",
+      # small multiplicative padding so errorbars don't clip at panel edge
+      expand = expansion(mult = 0.08)
+    ) +
     labs( title = sprintf("Métricas por Dinámica - %s vs %s", pair$gam_label, pair$classic_label), subtitle = version_title_label(version)) 
 }
 
@@ -436,7 +341,12 @@ plot_facet_metrics_global <- function(dt_long, pair, version) {
     scale_color_manual(name = "Método", values = sc$color, labels = sc$labels) +
     scale_linetype_manual(name = "Método", values = sc$linetype, labels = sc$labels) +
     scale_x_continuous(breaks = seq(0, 90, by = 10), name = "Reducción del Dataset (%)") +
-    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25), name = "Valor de la Métrica") +
+    scale_y_continuous(
+      breaks = scales::pretty_breaks(n = 4),
+      name = "Valor de la Métrica",
+      # small multiplicative padding so errorbars don't clip at panel edge
+      expand = expansion(mult = 0.08)
+    ) +
     labs(
       title = sprintf("Métricas Globales - %s vs %s", pair$gam_label, pair$classic_label),
       subtitle = version_title_label(version)

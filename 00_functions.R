@@ -2593,7 +2593,7 @@ plot_power_surface <- function(
       limits = c(0, 1),
       breaks = seq(0, 1, 0.2),
       labels = percent_format(accuracy = 1), 
-      name = "Poder\n(TPR)",
+      name = "Poder",
       option = "plasma",
       na.value = "white",
      guide = guide_colorbar(theme = theme( legend.text = element_text(angle = 45, hjust = 1, vjust = 1)))
@@ -2909,3 +2909,27 @@ detect_signal <- function(dt, method_name, detection_type, use_null) {
   return(dt)
 }
 
+################################################################################
+# Truncate axis helper
+################################################################################
+
+# Helper. calculates Y axis limits with padding from the data
+# Uses percentiles to ignore extreme outliers
+
+compute_y_limits <- function(dt_long, padding = 0.05) {
+  vals <- c(dt_long$lower, dt_long$upper, dt_long$value)
+  vals <- vals[is.finite(vals)]
+  if (length(vals) == 0) return(c(0, 1))
+
+  # Robust percentiles instead of min/max to ignore extreme outliers
+  y_min <- max(0, quantile(vals, 0.01) - padding * diff(range(vals)))
+  y_max <- min(1, quantile(vals, 0.99) + padding * diff(range(vals)))
+
+  # Enforce minimum visual range of 0.1 to avoid degenerate scales
+  if ((y_max - y_min) < 0.1) {
+    center <- (y_min + y_max) / 2
+    y_min <- max(0, center - 0.05)
+    y_max <- min(1, center + 0.05)
+  }
+  c(y_min, y_max)
+}
