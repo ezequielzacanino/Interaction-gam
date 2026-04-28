@@ -52,10 +52,10 @@ dynamic_labels <- c(
 method_pairs <- list(
   list(
     name = "IOR", gam = "GAM-logIOR", classic = "Estratificado-IOR",
-    gam_label = "GAM-IOR", classic_label = "IOR-Estratificado"),
+    gam_label = "GAM-IOR (dist.nula)", classic_label = "IOR-Estratificado (nominal)"),
   list(
     name = "RERI", gam = "GAM-RERI", classic = "Estratificado-RERI",
-    gam_label = "GAM-RERI", classic_label = "RERI-Estratificado"),
+    gam_label = "GAM-RERI (dist.nula)", classic_label = "RERI-Estratificado (nominal)"),
   list(
     name = "IOR_null", gam = "GAM-logIOR", classic = "Estratificado-IOR_null",
     gam_label = "GAM-IOR (dist.nula)", classic_label = "IOR-Estrat. (dist.nula)"),
@@ -64,11 +64,11 @@ method_pairs <- list(
     gam_label = "GAM-RERI (dist.nula)", classic_label = "RERI-Estrat. (dist.nula)"),
   list(
     name = "IOR_nom", gam = "GAM-logIOR_nom", classic = "Estratificado-IOR",
-    gam_label = "GAM-IOR (nominal)", classic_label = "IOR-Estratificado"
+    gam_label = "GAM-IOR (nominal)", classic_label = "IOR-Estratificado (nominal)"
   ),
   list(
     name = "RERI_nom", gam = "GAM-RERI_nom", classic = "Estratificado-RERI",
-    gam_label = "GAM-RERI (nominal)",  classic_label = "RERI-Estratificado"
+    gam_label = "GAM-RERI (nominal)",  classic_label = "RERI-Estratificado (nominal)"
  )
 )
 

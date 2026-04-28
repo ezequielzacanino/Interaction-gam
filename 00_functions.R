@@ -10,7 +10,7 @@
 
 # Project setup
 setwd("D:/Bioestadística/Interaction-gam")
-set.seed(7113)
+set.seed(9427)
 
 # Load all pipeline libraries using pacman
 library(pacman)

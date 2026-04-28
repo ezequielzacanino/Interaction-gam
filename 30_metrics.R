@@ -37,6 +37,14 @@ output_dir <- paste0("./results/", suffix, "/metrics_results/")
 
 ruta_coadmin_pos <- paste0("./results/", suffix, "/augmentation_results/positive_coadmin_by_stage.csv")
 ruta_coadmin_neg <- paste0("./results/", suffix, "/augmentation_results/negative_coadmin_by_stage.csv")
+coadmin_stage_pos <- fread(ruta_coadmin_pos)
+coadmin_stage_neg <- fread(ruta_coadmin_neg)
+if (!"stage_num" %in% names(coadmin_stage_pos)) {
+  coadmin_stage_pos[, stage_num := nichd_num]
+}
+if (!"stage_num" %in% names(coadmin_stage_neg)) {
+  coadmin_stage_neg[, stage_num := nichd_num]
+}
 
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
