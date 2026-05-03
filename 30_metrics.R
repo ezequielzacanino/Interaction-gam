@@ -575,12 +575,16 @@ fwrite(metrics_stage_filtered, paste0(output_dir, "metrics_stage_filtered.csv"))
 
 pares_interseccion <- list(
   list(
-    metodos = metodos[sapply(metodos, function(m) m$nombre %in% c("GAM-RERI", "Estratificado-RERI"))],
+    metodos = metodos[sapply(metodos, function(m) m$nombre %in% c(
+      "GAM-RERI", "Estratificado-RERI", "Estratificado-RERI_null", "GAM-RERI_nom"
+    ))],
     triplets = triplets_intersection_reri,
     label = "RERI"
   ),
   list(
-    metodos = metodos[sapply(metodos, function(m) m$nombre %in% c("GAM-logIOR", "Estratificado-IOR"))],
+    metodos = metodos[sapply(metodos, function(m) m$nombre %in% c(
+      "GAM-logIOR", "Estratificado-IOR", "Estratificado-IOR_null", "GAM-logIOR_nom"
+    ))],
     triplets = triplets_intersection_ior,
     label = "IOR"
   )

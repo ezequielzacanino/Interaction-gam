@@ -59,7 +59,7 @@ suffix <- paste0(
 Z90 <- qnorm(0.95)  # 90th percentile quantile for confidence intervals
 
 # Chosen percentile from the null distribution
-percentil <- "p95"
+percentil <- "p99"
 
 source("01_theme.R", local = TRUE)
 theme_set(theme_base())               
